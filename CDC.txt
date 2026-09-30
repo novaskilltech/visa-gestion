@@ -1,0 +1,869 @@
+# EXTENSION DU CAHIER DES CHARGES
+## Visa Gestion — SaaS B2B pour agences de voyages
+
+---
+
+# 106. POSITIONNEMENT COMMERCIAL
+
+Visa Gestion devient une plateforme SaaS B2B destinée principalement aux :
+
+- agences de voyages ;
+- agences Omra / Hajj ;
+- tour-opérateurs ;
+- professionnels du voyage sollicitant une société spécialisée dans le traitement des visas.
+
+La proposition de valeur est :
+
+> **Centralisez vos demandes de visas, transmettez les documents de vos voyageurs et récupérez les visas terminés depuis une interface professionnelle et sécurisée.**
+
+Visa Gestion doit permettre de remplacer :
+
+- WhatsApp ;
+- emails dispersés ;
+- dossiers Google Drive ;
+- échanges manuels de fichiers ;
+- tableaux Excel de suivi.
+
+---
+
+# 107. MODÈLE B2B
+
+Une agence cliente dispose de son propre espace.
+
+Exemple :
+
+```text
+Visa Gestion
+│
+├── Agence Atlas Voyages
+│   ├── Utilisateur 1
+│   ├── Utilisateur 2
+│   └── Dossiers visas
+│
+├── Agence Salam Travel
+│   ├── Utilisateur 1
+│   └── Dossiers visas
+│
+└── Agence Horizon Travel
+    ├── Utilisateur 1
+    ├── Utilisateur 2
+    └── Dossiers visas
+```
+
+Chaque agence doit être totalement isolée des autres.
+
+Une agence ne doit jamais pouvoir :
+
+- voir les voyageurs d'une autre agence ;
+- accéder aux documents d'une autre agence ;
+- connaître ses volumes ;
+- rechercher ses dossiers ;
+- accéder à ses visas.
+
+---
+
+# 108. ORGANISATIONS
+
+Ajouter une notion centrale :
+
+```text
+organizations
+```
+
+Une organisation représente une agence cliente.
+
+Champs proposés :
+
+```text
+id
+name
+legal_name
+email
+phone
+country
+address
+logo_url
+status
+created_at
+updated_at
+```
+
+Statuts :
+
+```text
+ACTIVE
+SUSPENDED
+PENDING
+ARCHIVED
+```
+
+---
+
+# 109. MEMBRES D'UNE AGENCE
+
+Créer :
+
+```text
+organization_members
+```
+
+Structure :
+
+```text
+id
+organization_id
+user_id
+role
+active
+created_at
+```
+
+Cela permet à une même agence d'avoir plusieurs collaborateurs.
+
+---
+
+# 110. NOUVEAUX RÔLES
+
+La structure des rôles devient :
+
+```text
+SUPER_ADMIN
+VISA_AGENT
+AGENCY_ADMIN
+AGENCY_USER
+```
+
+## SUPER_ADMIN
+
+Gestionnaire de Visa Gestion.
+
+Il peut :
+
+- voir toutes les agences ;
+- créer ou désactiver une agence ;
+- gérer les utilisateurs ;
+- voir tous les dossiers ;
+- affecter les dossiers ;
+- consulter l'activité générale ;
+- accéder aux paramètres SaaS.
+
+## VISA_AGENT
+
+Personne chargée du traitement des visas.
+
+Elle peut :
+
+- voir les dossiers qui lui sont affectés ;
+- consulter les documents ;
+- demander une pièce ;
+- traiter le dossier ;
+- uploader le visa final.
+
+## AGENCY_ADMIN
+
+Responsable d'une agence cliente.
+
+Il peut :
+
+- créer des dossiers ;
+- uploader des documents ;
+- voir tous les dossiers de son agence ;
+- récupérer les visas ;
+- gérer les utilisateurs de son agence si cette fonction est activée.
+
+## AGENCY_USER
+
+Collaborateur d'une agence.
+
+Il peut :
+
+- créer des dossiers ;
+- uploader des documents ;
+- suivre les dossiers autorisés ;
+- récupérer les visas autorisés.
+
+---
+
+# 111. ADAPTATION DES DOSSIERS
+
+La table :
+
+```text
+visa_cases
+```
+
+doit impérativement contenir :
+
+```text
+organization_id
+```
+
+Exemple :
+
+```text
+id
+reference
+organization_id
+traveler_id
+assigned_agent_id
+status
+destination_country
+travel_type
+departure_date
+return_date
+created_by
+created_at
+updated_at
+```
+
+L'isolation des données doit reposer sur cette organisation.
+
+---
+
+# 112. SÉCURITÉ MULTI-TENANT
+
+Les règles RLS doivent vérifier l'appartenance réelle de l'utilisateur à l'organisation.
+
+Un utilisateur d'une agence peut consulter uniquement :
+
+```text
+visa_cases.organization_id
+=
+organization_members.organization_id
+```
+
+et uniquement si :
+
+```text
+organization_members.user_id = auth.uid()
+```
+
+La simple présence d'un utilisateur authentifié n'est jamais suffisante.
+
+---
+
+# 113. LANDING PAGE PUBLIQUE
+
+Créer une véritable landing page commerciale à :
+
+```text
+/
+```
+
+Elle doit être accessible sans connexion.
+
+Elle doit présenter Visa Gestion comme un véritable produit SaaS B2B.
+
+---
+
+# 114. OBJECTIF DE LA LANDING PAGE
+
+La landing doit permettre en quelques secondes de comprendre :
+
+### Pour qui ?
+
+```text
+Agences de voyages
+Professionnels Omra / Hajj
+Tour-opérateurs
+```
+
+### Quel problème ?
+
+```text
+Documents dispersés
+WhatsApp
+Emails
+Suivi compliqué
+Erreurs de saisie
+```
+
+### Quelle solution ?
+
+```text
+Visa Gestion
+```
+
+### Quel bénéfice ?
+
+```text
+Centralisation
+Extraction IA
+Suivi des dossiers
+Sécurité
+Récupération rapide des visas
+```
+
+---
+
+# 115. HERO SECTION
+
+Exemple de structure :
+
+```text
+Visa Gestion
+
+La gestion des visas,
+enfin centralisée.
+
+Envoyez les documents de vos voyageurs,
+suivez chaque dossier et récupérez les visas
+depuis une seule interface sécurisée.
+
+[ Demander une démo ]
+[ Se connecter ]
+```
+
+Visuel :
+
+- dashboard Visa Gestion ;
+- cartes dossiers ;
+- statut visa ;
+- extraction automatique ;
+- aucune vraie donnée personnelle visible.
+
+---
+
+# 116. POSITIONNEMENT VISUEL
+
+La landing page doit évoquer :
+
+```text
+SaaS professionnel
++
+Voyage
++
+Documents
++
+Sécurité
++
+Rapidité
+```
+
+Éviter une esthétique :
+
+- administration publique ;
+- site d'ambassade ;
+- agence de voyage grand public ;
+- template SaaS générique.
+
+---
+
+# 117. SECTION PROBLÈME
+
+Titre possible :
+
+```text
+Vos demandes de visas ne devraient pas être gérées dans WhatsApp.
+```
+
+Présenter :
+
+```text
+Documents perdus
+Messages introuvables
+Fichiers mélangés
+Informations ressaisies
+Dossiers difficiles à suivre
+```
+
+Puis montrer la transition vers Visa Gestion.
+
+---
+
+# 118. SECTION FONCTIONNEMENT
+
+Présenter un workflow extrêmement simple :
+
+```text
+1. Créez le dossier
+2. Importez les documents
+3. Visa Gestion extrait les informations
+4. Le dossier est traité
+5. Récupérez le visa
+```
+
+Cette section doit être très visuelle.
+
+---
+
+# 119. SECTION EXTRACTION IA
+
+Présenter la fonctionnalité :
+
+```text
+Passeport
+        ↓
+Visa Gestion AI
+        ↓
+Nom
+Prénom
+Passeport
+Nationalité
+Naissance
+Expiration
+```
+
+Ainsi que :
+
+```text
+Billet
+↓
+PNR
+Compagnie
+Vols
+Dates
+Itinéraire
+```
+
+Préciser :
+
+> Les informations restent vérifiables et modifiables avant transmission.
+
+---
+
+# 120. SECTION SUIVI
+
+Illustrer :
+
+```text
+À vérifier
+↓
+Prêt à transmettre
+↓
+En traitement
+↓
+Visa prêt
+```
+
+L'agence doit pouvoir comprendre immédiatement où se trouve chaque dossier.
+
+---
+
+# 121. SECTION SÉCURITÉ
+
+Mettre en avant :
+
+- authentification sécurisée ;
+- espaces agences séparés ;
+- documents privés ;
+- contrôle des accès ;
+- traçabilité ;
+- stockage sécurisé ;
+- aucune donnée voyageur dans les aperçus sociaux.
+
+Éviter toute affirmation de certification ou conformité non réellement obtenue.
+
+---
+
+# 122. SECTION POUR LES AGENCES
+
+Titre possible :
+
+```text
+Conçu pour les professionnels du voyage
+```
+
+Présenter les bénéfices :
+
+- plusieurs collaborateurs ;
+- dossiers centralisés ;
+- recherche par voyageur ;
+- suivi des visas ;
+- historique ;
+- accès permanent aux dossiers ;
+- moins d'échanges inutiles.
+
+---
+
+# 123. CTA COMMERCIAL
+
+Pour la première version, privilégier :
+
+```text
+Demander une démo
+```
+
+ou :
+
+```text
+Demander un accès
+```
+
+plutôt qu'une inscription publique immédiate.
+
+Cette approche est recommandée au lancement car Visa Gestion traite des documents d'identité sensibles et le service nécessite une relation B2B contrôlée.
+
+---
+
+# 124. DEMANDE DE DÉMO
+
+Formulaire :
+
+```text
+Nom
+Prénom
+Agence
+Email professionnel
+Téléphone
+Pays
+Volume approximatif de visas / mois
+Message
+```
+
+Bouton :
+
+```text
+Demander une démonstration
+```
+
+---
+
+# 125. PAGE CONNEXION
+
+Route :
+
+```text
+/login
+```
+
+La landing publique doit contenir :
+
+```text
+Se connecter
+```
+
+pour les agences disposant déjà d'un compte.
+
+---
+
+# 126. ROUTES PUBLIQUES
+
+Structure initiale :
+
+```text
+/
+ /fonctionnalites
+ /securite
+ /contact
+ /login
+```
+
+Éventuellement :
+
+```text
+/tarifs
+```
+
+lorsque le modèle tarifaire sera défini.
+
+---
+
+# 127. ROUTES PRIVÉES
+
+Exemple :
+
+```text
+/app
+/app/dashboard
+/app/dossiers
+/app/dossiers/[id]
+/app/visas
+/app/equipe
+/app/parametres
+```
+
+---
+
+# 128. INDEXATION
+
+Les pages marketing peuvent être indexées :
+
+```text
+/
+ /fonctionnalites
+ /securite
+```
+
+Les pages applicatives doivent rester :
+
+```text
+noindex
+nofollow
+```
+
+---
+
+# 129. OPEN GRAPH DE LA LANDING PAGE
+
+Le partage de :
+
+```text
+https://domaine-visa-gestion.fr
+```
+
+doit afficher une vraie carte commerciale :
+
+```text
+Visa Gestion
+
+La plateforme de gestion des visas
+pour les professionnels du voyage.
+
+Centralisez les documents, suivez les dossiers
+et récupérez les visas depuis une interface sécurisée.
+```
+
+Image :
+
+```text
+1200 × 630
+```
+
+avec :
+
+- logo Visa Gestion ;
+- aperçu élégant de l'interface ;
+- branding ;
+- aucune donnée client réelle.
+
+---
+
+# 130. PREUVE PRODUIT
+
+La landing doit utiliser de vrais aperçus du produit.
+
+Les screenshots peuvent montrer des données fictives :
+
+```text
+Sarah Martin
+Ahmed Benali
+Atlas Voyages
+VISA-2026-00125
+```
+
+Aucune donnée réelle ne doit être utilisée.
+
+---
+
+# 131. TARIFICATION
+
+Ne pas figer le modèle tarifaire avant validation commerciale.
+
+Prévoir techniquement la possibilité future de proposer :
+
+```text
+Abonnement mensuel
++
+Volume de dossiers
+```
+
+ou :
+
+```text
+Facturation par visa
+```
+
+ou :
+
+```text
+Abonnement + consommation
+```
+
+La landing peut dans un premier temps afficher :
+
+```text
+Tarification professionnelle sur demande
+```
+
+---
+
+# 132. ONBOARDING D'UNE AGENCE
+
+Workflow :
+
+```text
+Demande de démo
+↓
+Validation commerciale
+↓
+Création de l'organisation
+↓
+Création du compte AGENCY_ADMIN
+↓
+Email d'invitation
+↓
+Définition du mot de passe
+↓
+Connexion
+↓
+Premier dossier
+```
+
+---
+
+# 133. PERSONNALISATION AGENCE
+
+Prévoir ultérieurement :
+
+```text
+Nom de l'agence
+Logo
+Téléphone
+Adresse
+Utilisateurs
+```
+
+Le logo pourra éventuellement apparaître dans son espace.
+
+---
+
+# 134. DASHBOARD AGENCE
+
+Le dashboard agence doit afficher :
+
+```text
+Dossiers en cours
+Documents demandés
+Visas prêts
+Dossiers terminés
+```
+
+Ainsi qu'une action très visible :
+
+```text
++ Nouveau dossier visa
+```
+
+---
+
+# 135. DASHBOARD SUPER ADMIN
+
+Le SaaS nécessite maintenant un dashboard opérateur supplémentaire.
+
+Indicateurs possibles :
+
+```text
+Agences actives
+Dossiers reçus
+Dossiers en traitement
+Documents manquants
+Visas prêts
+Dossiers terminés
+```
+
+Filtres :
+
+```text
+Agence
+Prestataire
+Statut
+Période
+```
+
+---
+
+# 136. PAGE AGENCES
+
+Super Admin :
+
+```text
+Agences
+```
+
+Liste :
+
+```text
+Nom
+Administrateur
+Nombre d'utilisateurs
+Dossiers en cours
+Dossiers terminés
+Statut
+```
+
+Actions :
+
+```text
+Voir
+Suspendre
+Réactiver
+Inviter un utilisateur
+```
+
+---
+
+# 137. ARCHITECTURE CIBLE
+
+```text
+Landing publique
+       │
+       ▼
+Visa Gestion
+       │
+       ├──────── Agence A
+       │           └── Utilisateurs
+       │
+       ├──────── Agence B
+       │           └── Utilisateurs
+       │
+       └──────── Agence C
+                   └── Utilisateurs
+
+               │
+               ▼
+
+       Backoffice Visa Gestion
+               │
+               ├── Super Admin
+               └── Agents visas
+```
+
+---
+
+# 138. PRINCIPE MULTI-TENANT
+
+La notion d'organisation doit être présente dès la première migration de base de données.
+
+Ne pas développer d'abord une application mono-agence puis ajouter les organisations ultérieurement.
+
+Cela entraînerait :
+
+- migrations complexes ;
+- réécriture des RLS ;
+- risques de fuite inter-clients ;
+- refonte des utilisateurs ;
+- refonte des dossiers.
+
+---
+
+# 139. PRODUIT FINAL
+
+Visa Gestion doit désormais réunir deux produits cohérents :
+
+```text
+SITE PUBLIC B2B
++
+APPLICATION MÉTIER PRIVÉE
+```
+
+Le visiteur voit un SaaS professionnel.
+
+L'agence connectée voit un outil opérationnel.
+
+Le gestionnaire voit un backoffice complet.
+
+Les trois expériences doivent partager :
+
+- même marque ;
+- même design system ;
+- même qualité de finition ;
+- même niveau de confiance.
+
+---
+
+# 140. NOUVELLE DÉFINITION DU PRODUIT
+
+**Visa Gestion est une plateforme B2B permettant aux agences de voyages de transmettre, centraliser et suivre les dossiers de visas confiés à une société spécialisée, depuis la réception des documents jusqu'à la mise à disposition du visa final.**
+
+La plateforme automatise également l'extraction et le contrôle initial des informations présentes dans les documents afin de réduire les ressaisies et les erreurs.
