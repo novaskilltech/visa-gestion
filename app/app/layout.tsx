@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Sparkles
 } from 'lucide-react';
+import { Logo } from '@/components/Logo';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<UserSession | null>(null);
@@ -88,13 +89,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </button>
 
             {/* Logo */}
-            <Link href="/app/dashboard" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold">
-                <FileText className="w-4 h-4" />
-              </div>
-              <span className="font-bold text-slate-900 tracking-tight text-base hidden sm:inline">
-                Visa Gestion
-              </span>
+            <Link href="/app/dashboard" className="flex items-center">
+              <Logo size="sm" showText={true} />
             </Link>
 
             {/* Active Organization Badge (Multi-tenant indicator) */}

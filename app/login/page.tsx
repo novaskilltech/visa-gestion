@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { authenticate } from '@/lib/store';
-import { Lock, ArrowRight, ShieldCheck, FileText, AlertCircle, User } from 'lucide-react';
+import { Lock, ArrowRight, ShieldCheck, AlertCircle, User } from 'lucide-react';
+import { Logo } from '@/components/Logo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -42,16 +43,16 @@ export default function LoginPage() {
       <main className="flex-1 flex items-center justify-center py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-6">
           {/* Header */}
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-brand-700 to-brand-500 flex items-center justify-center text-white mx-auto shadow-md">
-              <FileText className="w-6 h-6" />
+          <div className="text-center space-y-3 flex flex-col items-center">
+            <Logo size="lg" showText={false} />
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+                Connexion Visa Gestion
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                Espace sécurisé réservé aux agences et prestataires partenaires
+              </p>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Connexion Visa Gestion
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500">
-              Espace sécurisé réservé aux agences et prestataires partenaires
-            </p>
           </div>
 
           {/* Login Form */}

@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ShieldCheck, ArrowRight, Menu, X, FileText } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Menu, X } from 'lucide-react';
 import { useState } from 'react';
+import { Logo } from '@/components/Logo';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -21,19 +22,8 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-20">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-3 group">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 to-brand-500 flex items-center justify-center text-white shadow-md shadow-brand-500/20 group-hover:scale-105 transition-transform">
-              <FileText className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-xl font-bold tracking-tight text-slate-900 flex items-center gap-1.5">
-                Visa Gestion
-                <span className="text-xs px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 font-semibold tracking-wide">
-                  B2B
-                </span>
-              </span>
-              <p className="text-xs text-slate-700">Hub sécurisé pour agences</p>
-            </div>
+          <Link href="/" className="group">
+            <Logo size="md" />
           </Link>
 
           {/* Desktop Nav */}

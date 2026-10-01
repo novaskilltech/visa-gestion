@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import { ShieldCheck, Lock, FileText, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Lock, CheckCircle2 } from 'lucide-react';
+import { Logo } from '@/components/Logo';
 
 export function Footer() {
   return (
@@ -8,14 +9,7 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
           {/* Col 1 : Branding */}
           <div className="md:col-span-1 space-y-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold">
-                <FileText className="w-4 h-4" />
-              </div>
-              <span className="text-xl font-bold tracking-tight text-white">
-                Visa Gestion
-              </span>
-            </div>
+            <Logo size="md" variant="dark" />
             <p className="text-sm text-slate-400 leading-relaxed">
               La plateforme SaaS B2B dédiée aux agences de voyages et professionnels du tourisme pour centraliser, traiter et suivre les formalités de visas.
             </p>

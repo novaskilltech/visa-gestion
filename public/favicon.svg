@@ -1,35 +1,54 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+    <!-- Background Gradient -->
+    <linearGradient id="fav-bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="100%" stop-color="#1e3a8a" />
+      <stop offset="100%" stop-color="#1e293b" />
     </linearGradient>
-    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8" />
-      <stop offset="100%" stop-color="#2563eb" />
+
+    <!-- Cyan to Electric Blue Gradient for Flight V -->
+    <linearGradient id="flight-cyan" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="50%" stop-color="#06b6d4" />
+      <stop offset="100%" stop-color="#38bdf8" />
     </linearGradient>
-    <linearGradient id="check" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#34d399" />
+
+    <linearGradient id="flight-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+
+    <!-- Verification Checkmark Green Gradient -->
+    <linearGradient id="check-emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
       <stop offset="100%" stop-color="#059669" />
     </linearGradient>
+
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#06b6d4" flood-opacity="0.3" />
+    </filter>
   </defs>
 
-  <!-- Squircle Background -->
-  <rect width="32" height="32" rx="7" fill="url(#bg)" />
+  <!-- Dark Rounded Container -->
+  <rect width="100" height="100" rx="24" fill="url(#fav-bg)" />
+  <rect x="2" y="2" width="96" height="96" rx="22" fill="none" stroke="#334155" stroke-width="2" />
 
-  <!-- Subtle Inner Border -->
-  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.25" fill="none" stroke="#334155" stroke-width="1.5" />
+  <!-- Monogram V - Left Arm / Flight arc -->
+  <path d="M 22 42 C 22 62, 35 78, 48 78 C 55 78, 62 72, 74 38 L 65 35 C 55 60, 50 67, 47 67 C 38 67, 30 55, 30 42 Z" fill="url(#flight-blue)" />
 
-  <!-- Stylized Shield & V -->
-  <!-- Left wing of V -->
-  <path d="M6 8 L13 22 L15.5 22 L10 8 Z" fill="#60a5fa" />
+  <!-- Dynamic Swoosh with Airplane Ascending -->
+  <path d="M 20 54 C 20 68, 32 82, 50 82 C 65 82, 75 68, 80 40 L 71 38 C 66 60, 58 72, 49 72 C 37 72, 28 62, 28 54 Z" fill="url(#flight-cyan)" filter="url(#glow)" />
 
-  <!-- Right wing of V evolving into an ascending checkmark/flight -->
-  <path d="M12.5 22 L14.5 22 L24 9 L21.5 8 L14 18.5 Z" fill="url(#gold)" />
+  <!-- Airplane Silhouette at the end of the swoop -->
+  <g transform="translate(36, 24) rotate(-35) scale(0.65)">
+    <path d="M 12 0 L 16 8 L 28 11 L 16 14 L 14 22 L 10 21 L 11 15 L 2 13 L 0 10 L 10 10 Z" fill="#38bdf8" />
+  </g>
 
-  <!-- Golden / Emerald visa checkmark accent -->
-  <path d="M17 14 L24.5 6.5 L26 8 L17 17 Z" fill="url(#check)" />
-
-  <!-- Central star / spark dot -->
-  <circle cx="24.5" cy="7.25" r="1.5" fill="#fef08a" />
+  <!-- Verified Checkmark Circle on Right Arm -->
+  <g transform="translate(73, 30)">
+    <circle cx="0" cy="0" r="14" fill="#0f172a" stroke="#06b6d4" stroke-width="3" />
+    <circle cx="0" cy="0" r="10" fill="url(#check-emerald)" />
+    <!-- White Checkmark -->
+    <path d="M -4 0 L -1 3 L 5 -3" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
 </svg>
