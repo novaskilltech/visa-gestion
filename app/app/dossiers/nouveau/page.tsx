@@ -45,9 +45,14 @@ export default function NewCasePage() {
   const [birthDate, setBirthDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
 
-  // Flight info
+  // Flight info - Aller (Billet 1)
   const [pnr, setPnr] = useState('');
   const [company, setCompany] = useState('');
+
+  // Billets séparés - Retour (Billet 2)
+  const [hasSeparateTickets, setHasSeparateTickets] = useState(false);
+  const [returnPnr, setReturnPnr] = useState('');
+  const [returnCompany, setReturnCompany] = useState('');
 
   // File & OCR state
   const [isScanning, setIsScanning] = useState(false);
@@ -216,6 +221,9 @@ export default function NewCasePage() {
         status: (lastName && passportNum) ? 'PRET_A_TRANSMETTRE' : 'A_VERIFIER',
         flight_pnr: pnr,
         flight_company: company,
+        has_separate_tickets: hasSeparateTickets,
+        return_flight_pnr: hasSeparateTickets ? returnPnr : '',
+        return_flight_company: hasSeparateTickets ? returnCompany : '',
         organization_id: session.organization_id,
         organization_name: session.organization_name,
         created_by: session.user_id,
@@ -561,37 +569,143 @@ export default function NewCasePage() {
             </div>
           </div>
 
-          {/* Flight Details */}
+          {/* Flight Details & Separate Tickets Support */}
           <div className="space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2">
-              3. Détails des vols (Optionnel)
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Numéro de réservation PNR
-                </label>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2 gap-2">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Plane className="w-4 h-4 text-brand-600" />
+                <span>3. Détails des vols & Billets d&apos;avion (Optionnel)</span>
+              </h3>
+              
+              {/* Option billets séparés switch */}
+              <label className="inline-flex items-center gap-2 cursor-pointer bg-slate-50 hover:bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 transition-colors">
                 <input
-                  type="text"
-                  placeholder="Ex: SV142"
-                  value={pnr}
-                  onChange={(e) => setPnr(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono text-slate-900"
+                  type="checkbox"
+                  checked={hasSeparateTickets}
+                  onChange={(e) => setHasSeparateTickets(e.target.checked)}
+                  className="rounded border-slate-300 text-brand-600 focus:ring-brand-500 w-3.5 h-3.5"
                 />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Compagnie aérienne
-                </label>
-                <input
-                  type="text"
-                  placeholder="Saudia, Emirates, Air France..."
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900"
-                />
-              </div>
+                <span className="text-xs font-semibold text-slate-700">
+                  Billets séparés (2 PNR / 2 Compagnies)
+                </span>
+              </label>
             </div>
+
+            {!hasSeparateTickets ? (
+              // Billet unique / Aller-Retour groupé
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Numéro de réservation PNR
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex: SV142"
+                      value={pnr}
+                      onChange={(e) => setPnr(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Compagnie aérienne
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Saudia, Royal Air Maroc, Turkish Airlines..."
+                      value={company}
+                      onChange={(e) => setCompany(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-500 italic">
+                  💡 Si le voyageur a réservé son aller et son retour sur 2 billets séparés (2 compagnies ou 2 PNR distincts), cochez la case &laquo; Billets séparés &raquo; ci-dessus.
+                </p>
+              </div>
+            ) : (
+              // Billets séparés : Billet 1 Aller + Billet 2 Retour
+              <div className="space-y-4">
+                {/* Bloc 1: Vol Aller */}
+                <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5 uppercase tracking-wide">
+                      <Plane className="w-3.5 h-3.5 text-blue-600" />
+                      Billet 1 : Vol Aller
+                    </span>
+                    <span className="text-[10px] font-semibold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                      PNR & Compagnie Aller
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Code PNR Aller
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: SV142"
+                        value={pnr}
+                        onChange={(e) => setPnr(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Compagnie aérienne Aller
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Saudia, Air France..."
+                        value={company}
+                        onChange={(e) => setCompany(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bloc 2: Vol Retour (Billet séparé) */}
+                <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/50 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-purple-900 flex items-center gap-1.5 uppercase tracking-wide">
+                      <Plane className="w-3.5 h-3.5 text-purple-600" />
+                      Billet 2 : Vol Retour (Billet Séparé)
+                    </span>
+                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 px-2 py-0.5 rounded">
+                      2ème PNR & Compagnie
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Code PNR Retour
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: MS892"
+                        value={returnPnr}
+                        onChange={(e) => setReturnPnr(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Compagnie aérienne Retour
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: EgyptAir, Transavia, Flynas..."
+                        value={returnCompany}
+                        onChange={(e) => setReturnCompany(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action buttons */}

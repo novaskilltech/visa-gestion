@@ -45,4 +45,25 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
       assert.match(visaCase.organization_id, /^org-/);
     }
   });
+
+  test('Support des billets séparés : deux PNR et deux compagnies distinctes', () => {
+    const caseWithSeparateTickets = {
+      id: 'c-sep-1',
+      reference: 'VISA-2026-OMRA-SEP',
+      organization_id: 'org-omrayanair',
+      traveler: 'Karim TAZI',
+      has_separate_tickets: true,
+      flight_pnr: 'SV142',
+      flight_company: 'Saudia Airlines',
+      return_flight_pnr: 'MS892',
+      return_flight_company: 'EgyptAir',
+    };
+
+    assert.equal(caseWithSeparateTickets.has_separate_tickets, true);
+    assert.equal(caseWithSeparateTickets.flight_pnr, 'SV142');
+    assert.equal(caseWithSeparateTickets.flight_company, 'Saudia Airlines');
+    assert.equal(caseWithSeparateTickets.return_flight_pnr, 'MS892');
+    assert.equal(caseWithSeparateTickets.return_flight_company, 'EgyptAir');
+    assert.notEqual(caseWithSeparateTickets.flight_pnr, caseWithSeparateTickets.return_flight_pnr);
+  });
 });

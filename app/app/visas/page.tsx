@@ -116,18 +116,29 @@ export default function VisasPage() {
               <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-1">
                 <div className="flex justify-between text-slate-600">
                   <span>Numéro Passeport :</span>
-                  <span className="font-mono font-bold text-slate-800">{c.traveler_passport_num || '24AB12345'}</span>
+                  <span className="font-mono font-bold text-slate-800">{c.traveler_passport_num || 'Non renseigné'}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
                   <span>Date de départ :</span>
-                  <span className="font-mono text-slate-800">{c.departure_date || '15/11/2026'}</span>
+                  <span className="font-mono text-slate-800">{c.departure_date || 'Non renseignée'}</span>
                 </div>
-                {c.flight_pnr && (
+                {c.has_separate_tickets || (c.return_flight_pnr && c.return_flight_pnr.trim()) ? (
+                  <>
+                    <div className="flex justify-between text-slate-600">
+                      <span>PNR Aller :</span>
+                      <span className="font-mono text-slate-800">{c.flight_pnr || 'N/A'} {c.flight_company ? `(${c.flight_company})` : ''}</span>
+                    </div>
+                    <div className="flex justify-between text-purple-700">
+                      <span>PNR Retour :</span>
+                      <span className="font-mono font-semibold">{c.return_flight_pnr || 'N/A'} {c.return_flight_company ? `(${c.return_flight_company})` : ''}</span>
+                    </div>
+                  </>
+                ) : c.flight_pnr ? (
                   <div className="flex justify-between text-slate-600">
                     <span>Vol PNR :</span>
-                    <span className="font-mono text-slate-800">{c.flight_pnr} ({c.flight_company})</span>
+                    <span className="font-mono text-slate-800">{c.flight_pnr} {c.flight_company ? `(${c.flight_company})` : ''}</span>
                   </div>
-                )}
+                ) : null}
               </div>
 
               <div className="flex items-center justify-between pt-1">

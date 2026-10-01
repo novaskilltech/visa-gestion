@@ -92,6 +92,9 @@ export interface VisaCase {
   status: CaseStatus;
   flight_pnr?: string;
   flight_company?: string;
+  has_separate_tickets?: boolean;
+  return_flight_pnr?: string;
+  return_flight_company?: string;
   flight_dates?: string;
   assigned_agent_id?: string;
   assigned_agent_name?: string;

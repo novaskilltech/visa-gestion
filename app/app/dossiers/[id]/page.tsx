@@ -244,17 +244,42 @@ export default function CaseDetailPage() {
               <Plane className="w-4 h-4 text-indigo-600" />
               Détails du voyage & PNR
             </h3>
-            <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded">
-              {caseData.travel_type}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {(caseData.has_separate_tickets || (caseData.return_flight_pnr && caseData.return_flight_pnr.trim())) && (
+                <span className="text-[10px] bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded border border-purple-200">
+                  2 Billets séparés
+                </span>
+              )}
+              <span className="text-[10px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded">
+                {caseData.travel_type}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="p-2.5 rounded-lg bg-slate-50">
-              <span className="text-slate-400 block text-[10px]">Compagnie & PNR</span>
-              <span className="font-bold text-slate-800">{caseData.flight_company || 'Saudia'} ({caseData.flight_pnr || 'SV8942'})</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-slate-50">
+            {caseData.has_separate_tickets || (caseData.return_flight_pnr && caseData.return_flight_pnr.trim()) ? (
+              <>
+                <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-200">
+                  <span className="text-blue-700 block text-[10px] font-bold uppercase tracking-wide">Vol Aller (Billet 1)</span>
+                  <span className="font-bold text-slate-800 block">{caseData.flight_company || 'Non renseignée'}</span>
+                  <span className="font-mono text-[11px] text-blue-900 font-semibold">PNR: {caseData.flight_pnr || 'N/A'}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-purple-50/70 border border-purple-200">
+                  <span className="text-purple-700 block text-[10px] font-bold uppercase tracking-wide">Vol Retour (Billet 2)</span>
+                  <span className="font-bold text-slate-800 block">{caseData.return_flight_company || 'Non renseignée'}</span>
+                  <span className="font-mono text-[11px] text-purple-900 font-semibold">PNR: {caseData.return_flight_pnr || 'N/A'}</span>
+                </div>
+              </>
+            ) : (
+              <div className="p-2.5 rounded-lg bg-slate-50 col-span-2 sm:col-span-1">
+                <span className="text-slate-400 block text-[10px]">Compagnie & PNR</span>
+                <span className="font-bold text-slate-800">
+                  {caseData.flight_company || (caseData.flight_pnr ? 'Compagnie non spécifiée' : 'Non renseigné')}
+                  {caseData.flight_pnr ? ` (${caseData.flight_pnr})` : ''}
+                </span>
+              </div>
+            )}
+            <div className="p-2.5 rounded-lg bg-slate-50 col-span-2 sm:col-span-1">
               <span className="text-slate-400 block text-[10px]">Destination</span>
               <span className="font-bold text-slate-800">{caseData.destination_country}</span>
             </div>
