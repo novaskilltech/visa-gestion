@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { 
@@ -8,9 +8,15 @@ import {
   getCaseById, 
   updateCaseStatus,
   updateVisaCase,
-  deleteVisaCase
+  deleteVisaCase,
+  addDocumentToCase,
+  removeDocumentFromCase
 } from '@/lib/store';
-import { VisaCase, UserSession, CaseStatus } from '@/types';
+import { VisaCase, UserSession, CaseStatus, CaseDocument, DocumentType } from '@/types';
+import { classifyDocumentType, parseFlightTicketText } from '@/lib/flight-parser';
+import { parsePassportText } from '@/lib/mrz-parser';
+import { processPdfFile } from '@/lib/pdf-reader';
+import Tesseract from 'tesseract.js';
 import { 
   ArrowLeft, 
   CheckCircle2, 
@@ -30,7 +36,11 @@ import {
   Trash2,
   Save,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Plus,
+  RefreshCw,
+  Eye,
+  UploadCloud
 } from 'lucide-react';
 
 export default function CaseDetailPage() {
@@ -68,6 +78,12 @@ export default function CaseDetailPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Attachment & OCR state
+  const docInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [uploadDocStep, setUploadDocStep] = useState('');
+  const [docFeedbackMsg, setDocFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const current = getCurrentSession();
@@ -157,6 +173,132 @@ export default function CaseDetailPage() {
   const handleDownloadVisa = () => {
     setDownloadSuccess(true);
     setTimeout(() => setDownloadSuccess(false), 4000);
+  };
+
+  const handleAttachDocument = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0] || !caseData || !session) return;
+    const file = e.target.files[0];
+    setIsUploadingDoc(true);
+    setUploadDocStep('Chargement et lecture du document...');
+    setDocFeedbackMsg(null);
+
+    try {
+      let rawText = '';
+      let previewUrl = '';
+
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        setUploadDocStep('Rendu du PDF et analyse des calques...');
+        const pdfRes = await processPdfFile(file);
+        previewUrl = pdfRes.previewUrl || '';
+        if (pdfRes.text && pdfRes.text.length > 30) {
+          rawText = pdfRes.text;
+        } else if (pdfRes.canvas) {
+          setUploadDocStep('Lecture optique OCR du PDF scanné...');
+          const ocrRes = await Tesseract.recognize(pdfRes.canvas, 'fra+eng');
+          rawText = ocrRes.data.text || '';
+        }
+      } else {
+        setUploadDocStep('Lecture de l\'image et OCR...');
+        const reader = new FileReader();
+        previewUrl = await new Promise((res) => {
+          reader.onload = () => res(reader.result as string);
+          reader.onerror = () => res('');
+          reader.readAsDataURL(file);
+        });
+        const ocrRes = await Tesseract.recognize(file, 'fra+eng');
+        rawText = ocrRes.data.text || '';
+      }
+
+      // Classifier le document
+      const detectedType = classifyDocumentType(rawText);
+
+      // Si le document apporte des données de vol ou d'identité non renseignées, les injecter
+      const updates: Partial<Omit<VisaCase, 'id' | 'reference' | 'created_at'>> = {};
+      if (detectedType === 'BILLET_AVION') {
+        const flightData = parseFlightTicketText(rawText);
+        if (!caseData.flight_pnr && flightData.pnr) {
+          updates.flight_pnr = flightData.pnr;
+        } else if (caseData.flight_pnr && flightData.pnr && flightData.pnr !== caseData.flight_pnr) {
+          // Billet retour séparé !
+          updates.has_separate_tickets = true;
+          updates.return_flight_pnr = flightData.pnr;
+          if (flightData.airline) updates.return_flight_company = flightData.airline;
+        }
+        if (!caseData.flight_company && flightData.airline) updates.flight_company = flightData.airline;
+        if (!caseData.departure_date && flightData.departureDate) updates.departure_date = flightData.departureDate;
+        if (!caseData.return_date && flightData.returnDate) updates.return_date = flightData.returnDate;
+      } else if (detectedType === 'PASSEPORT') {
+        const passData = parsePassportText(rawText);
+        if (!caseData.traveler_passport_num && passData.passportNumber) updates.traveler_passport_num = passData.passportNumber;
+        if (!caseData.traveler_birth_date && passData.birthDate) updates.traveler_birth_date = passData.birthDate;
+        if (!caseData.traveler_passport_expiry && passData.expiryDate) updates.traveler_passport_expiry = passData.expiryDate;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updateVisaCase(caseData.id, updates, session);
+      }
+
+      // Attacher le document au dossier
+      const updated = addDocumentToCase(
+        caseData.id,
+        {
+          type: detectedType,
+          file_name: file.name,
+          file_size: file.size,
+          file_url: previewUrl || '#',
+        },
+        session
+      );
+
+      if (updated) {
+        setCaseData(updated);
+        setDocFeedbackMsg({
+          text: `Document "${file.name}" attaché avec succès au dossier.`,
+          type: 'success',
+        });
+        setTimeout(() => setDocFeedbackMsg(null), 4000);
+      }
+    } catch (err) {
+      console.error('Erreur attachement document:', err);
+      setDocFeedbackMsg({
+        text: 'Erreur lors de l\'analyse automatique du document.',
+        type: 'error',
+      });
+    } finally {
+      setIsUploadingDoc(false);
+      setUploadDocStep('');
+      if (docInputRef.current) docInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveDoc = (docId: string) => {
+    if (!caseData || !session) return;
+    if (confirm('Voulez-vous retirer cette pièce jointe du dossier ?')) {
+      const updated = removeDocumentFromCase(caseData.id, docId, session);
+      if (updated) {
+        setCaseData(updated);
+        setDocFeedbackMsg({
+          text: 'Pièce jointe retirée du dossier.',
+          type: 'success',
+        });
+        setTimeout(() => setDocFeedbackMsg(null), 3000);
+      }
+    }
+  };
+
+  const handleViewOrDownloadDoc = (doc: CaseDocument) => {
+    if (doc.file_url && (doc.file_url.startsWith('data:') || doc.file_url.startsWith('blob:') || doc.file_url.startsWith('http'))) {
+      const win = window.open();
+      if (win) {
+        if (doc.file_url.startsWith('data:image')) {
+          win.document.write(`<title>${doc.file_name}</title><body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${doc.file_url}" style="max-width:95vw;max-height:95vh;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.5);"/></body>`);
+        } else {
+          win.location.href = doc.file_url;
+        }
+        return;
+      }
+    }
+    handleDownloadVisa();
   };
 
   const steps: { key: CaseStatus; label: string }[] = [
@@ -685,58 +827,143 @@ export default function CaseDetailPage() {
         </div>
       )}
 
-      {/* Documents attachés (CDC #118) */}
+      {/* Documents attachés (CDC #118 & Gestion cumulative) */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <FileText className="w-4 h-4 text-brand-600" />
-            Documents attachés au dossier
-          </h3>
-          <span className="text-xs text-slate-400">Stockage privé sécurisé AES-256</span>
+        {/* Hidden File Input for adding attachments */}
+        <input
+          type="file"
+          ref={docInputRef}
+          accept="application/pdf,image/png,image/jpeg,image/webp"
+          onChange={handleAttachDocument}
+          className="hidden"
+        />
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-brand-600" />
+              <span>Documents attachés au dossier ({caseData.documents?.length || 0})</span>
+            </h3>
+            <p className="text-[11px] text-slate-500">
+              Passeports biométriques, e-tickets de vol (Aller & Retour) et pièces justificatives
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => docInputRef.current?.click()}
+            disabled={isUploadingDoc}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-xs font-bold text-brand-700 transition-colors shadow-2xs self-start sm:self-auto disabled:opacity-50"
+          >
+            {isUploadingDoc ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-600" />
+            ) : (
+              <Plus className="w-3.5 h-3.5 text-brand-600" />
+            )}
+            <span>Ajouter une pièce jointe (PDF/Image)</span>
+          </button>
         </div>
+
+        {/* Upload in progress banner */}
+        {isUploadingDoc && (
+          <div className="p-3.5 rounded-xl bg-brand-50 border border-brand-200 flex items-center gap-3 text-xs text-brand-900 animate-in fade-in">
+            <RefreshCw className="w-4 h-4 animate-spin text-brand-600 shrink-0" />
+            <div>
+              <p className="font-bold">{uploadDocStep}</p>
+              <p className="text-[11px] text-brand-700">L&apos;IA lit le document et met à jour automatiquement les données associées.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Feedback message banner */}
+        {docFeedbackMsg && (
+          <div className={`p-3 rounded-xl text-xs font-semibold flex items-center gap-2 animate-in fade-in ${
+            docFeedbackMsg.type === 'success'
+              ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border border-rose-200 text-rose-800'
+          }`}>
+            {docFeedbackMsg.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span>{docFeedbackMsg.text}</span>
+          </div>
+        )}
 
         <div className="space-y-2">
           {caseData.documents && caseData.documents.length > 0 ? (
             caseData.documents.map((doc) => (
               <div
                 key={doc.id}
-                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs"
+                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:border-slate-300 transition-colors"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-brand-600">
-                    <FileCheck className="w-4 h-4" />
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold border shrink-0 ${
+                    doc.type === 'BILLET_AVION'
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : doc.type === 'PASSEPORT'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-white text-slate-700 border-slate-200'
+                  }`}>
+                    {doc.type === 'BILLET_AVION' ? (
+                      <Plane className="w-4 h-4" />
+                    ) : doc.type === 'PASSEPORT' ? (
+                      <ShieldCheck className="w-4 h-4" />
+                    ) : (
+                      <FileCheck className="w-4 h-4" />
+                    )}
                   </div>
                   <div>
                     <p className="font-bold text-slate-800">{doc.file_name}</p>
-                    <p className="text-[10px] text-slate-400">{doc.type} • Déposé le {new Date(doc.created_at).toLocaleDateString('fr-FR')}</p>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                      <span className="font-semibold text-slate-600">
+                        {doc.type === 'PASSEPORT' ? 'Passeport biométrique' : doc.type === 'BILLET_AVION' ? 'Billet d\'avion / E-ticket' : 'Autre document'}
+                      </span>
+                      {doc.file_size ? (
+                        <span>• {(doc.file_size / 1024).toFixed(1)} KB</span>
+                      ) : null}
+                      <span>• Déposé le {new Date(doc.created_at).toLocaleDateString('fr-FR')}</span>
+                    </div>
                   </div>
                 </div>
-                <button
-                  onClick={handleDownloadVisa}
-                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold text-slate-700 flex items-center gap-1.5 shadow-2xs"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Consulter</span>
-                </button>
+
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  <button
+                    type="button"
+                    onClick={() => handleViewOrDownloadDoc(doc)}
+                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-colors"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Consulter</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveDoc(doc.id)}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                    title="Retirer cette pièce jointe"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             ))
           ) : (
-            <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-brand-600">
-                  <FileText className="w-4 h-4" />
-                </div>
-                <div>
-                  <p className="font-bold text-slate-800">passeport_{caseData.traveler_last_name.toLowerCase()}.pdf</p>
-                  <p className="text-[10px] text-slate-400">PASSEPORT BIOMÉTRIQUE • Pièce principale</p>
-                </div>
+            <div className="p-6 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-center space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800">Aucun document attaché pour le moment</p>
+                <p className="text-[11px] text-slate-500">Ajoutez le passeport ou les billets d&apos;avion pour que le prestataire y accède.</p>
               </div>
               <button
-                onClick={handleDownloadVisa}
-                className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold text-slate-700 flex items-center gap-1.5"
+                type="button"
+                onClick={() => docInputRef.current?.click()}
+                className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-md shadow-brand-600/30 inline-flex items-center gap-1.5"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Télécharger</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Ajouter un document</span>
               </button>
             </div>
           )}

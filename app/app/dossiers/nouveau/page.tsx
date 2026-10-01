@@ -4,8 +4,9 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentSession, createVisaCase } from '@/lib/store';
-import { VisaCase } from '@/types';
-import { parsePassportText, ParsedPassportData } from '@/lib/mrz-parser';
+import { VisaCase, CaseDocument, DocumentType } from '@/types';
+import { parsePassportText } from '@/lib/mrz-parser';
+import { parseFlightTicketText, classifyDocumentType } from '@/lib/flight-parser';
 import { processPdfFile } from '@/lib/pdf-reader';
 import Tesseract from 'tesseract.js';
 import { 
@@ -23,8 +24,25 @@ import {
   Scan,
   RefreshCw,
   FileCheck,
+  Plus,
+  Trash2,
+  Eye,
   Info
 } from 'lucide-react';
+
+interface CumulativeDoc {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  previewUrl: string | null;
+  detectedType: DocumentType;
+  status: 'SCANNING' | 'DONE' | 'ERROR';
+  progress: number;
+  stepText: string;
+  summary: string[];
+  errorMessage?: string;
+}
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -54,159 +72,296 @@ export default function NewCasePage() {
   const [returnPnr, setReturnPnr] = useState('');
   const [returnCompany, setReturnCompany] = useState('');
 
-  // File & OCR state
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
-  const [scanStep, setScanStep] = useState<string>('');
-  const [aiExtracted, setAiExtracted] = useState(false);
-  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
+  // Cumulative documents state
+  const [documents, setDocuments] = useState<CumulativeDoc[]>([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [detectionSummary, setDetectionSummary] = useState<string[]>([]);
+  const [globalScanSummary, setGlobalScanSummary] = useState<string[]>([]);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
 
-  // REAL OCR EXTRACTION ENGINE (SUPPORT IMAGE & PDF)
-  const processPassportFile = async (file: File) => {
-    setIsScanning(true);
-    setScanProgress(10);
-    setScanStep('Chargement du document...');
-    setUploadedFileName(file.name);
-    setAiExtracted(false);
+  // File size formatter
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // Convert File to Base64 or ObjectURL for persistent in-session preview/download
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Sequential queue processor for multiple cumulative documents
+  const processFilesBatch = async (files: File[]) => {
+    if (files.length === 0) return;
+    setIsProcessingQueue(true);
     setWarningMsg(null);
-    setDetectionSummary([]);
 
-    try {
-      let rawText = '';
+    // Initialiser les entrées dans l'état cumulatif
+    const newDocEntries: CumulativeDoc[] = files.map((file) => ({
+      id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      file,
+      name: file.name,
+      size: file.size,
+      previewUrl: null,
+      detectedType: 'AUTRE',
+      status: 'SCANNING',
+      progress: 5,
+      stepText: 'En attente d\'analyse...',
+      summary: [],
+    }));
 
-      // CAS 1 : C'EST UN FICHIER PDF
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        setScanStep('Conversion du PDF et analyse des calques...');
-        setScanProgress(25);
+    setDocuments((prev) => [...prev, ...newDocEntries]);
 
-        const pdfResult = await processPdfFile(file);
-        
-        // Afficher l'aperçu rendu de la première page du PDF
-        if (pdfResult.previewUrl) {
-          setFilePreview(pdfResult.previewUrl);
-        }
+    // Traitement séquentiel de chaque fichier pour fluidité et robustesse OCR
+    for (const docEntry of newDocEntries) {
+      const file = docEntry.file;
 
-        // Si le PDF contenait du texte numérique exploitable
-        if (pdfResult.text && pdfResult.text.length > 30) {
-          rawText = pdfResult.text;
-          setScanProgress(70);
-        } else if (pdfResult.canvas) {
-          // Si c'est un PDF scanné (image dans PDF), on lance l'OCR sur le canvas haute résolution
-          setScanStep('Lecture optique OCR de la page scannée du PDF...');
-          setScanProgress(40);
+      const updateDocState = (patch: Partial<CumulativeDoc>) => {
+        setDocuments((prev) =>
+          prev.map((d) => (d.id === docEntry.id ? { ...d, ...patch } : d))
+        );
+      };
 
-          const ocrResult = await Tesseract.recognize(pdfResult.canvas, 'fra+eng', {
+      updateDocState({ stepText: 'Lecture du fichier...', progress: 15 });
+
+      try {
+        let rawText = '';
+        let previewDataUrl: string | null = null;
+
+        // 1. EXTRACTION DU TEXTE & GÉNÉRATION DE L'APERÇU
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+          updateDocState({ stepText: 'Rendu du PDF et analyse des calques...', progress: 30 });
+          const pdfResult = await processPdfFile(file);
+          previewDataUrl = pdfResult.previewUrl;
+
+          if (pdfResult.text && pdfResult.text.length > 30) {
+            rawText = pdfResult.text;
+            updateDocState({ progress: 70 });
+          } else if (pdfResult.canvas) {
+            updateDocState({ stepText: 'Lecture optique OCR du PDF scanné...', progress: 45 });
+            const ocrResult = await Tesseract.recognize(pdfResult.canvas, 'fra+eng', {
+              logger: (m) => {
+                if (m.status === 'recognizing text' && m.progress) {
+                  updateDocState({ progress: Math.round(45 + m.progress * 45) });
+                }
+              },
+            });
+            rawText = ocrResult.data.text || '';
+          }
+        } else {
+          // Image JPG, PNG, WEBP
+          updateDocState({ stepText: 'Lecture de l\'image et OCR...', progress: 30 });
+          previewDataUrl = await readFileAsDataUrl(file);
+
+          const ocrResult = await Tesseract.recognize(file, 'fra+eng', {
             logger: (m) => {
               if (m.status === 'recognizing text' && m.progress) {
-                setScanProgress(Math.round(40 + m.progress * 50));
+                updateDocState({ progress: Math.round(30 + m.progress * 60) });
               }
             },
           });
           rawText = ocrResult.data.text || '';
         }
-      } 
-      // CAS 2 : C'EST UNE IMAGE (JPG, PNG, WEBP)
-      else {
-        setScanStep('Lecture de l\'image et analyse optique...');
-        setScanProgress(25);
 
-        // Aperçu de l'image
-        const reader = new FileReader();
-        reader.onload = (e) => setFilePreview(e.target?.result as string);
-        reader.readAsDataURL(file);
+        updateDocState({ stepText: 'Identification du document et extraction...', progress: 92 });
 
-        const ocrResult = await Tesseract.recognize(file, 'fra+eng', {
-          logger: (m) => {
-            if (m.status === 'recognizing text' && m.progress) {
-              setScanProgress(Math.round(25 + m.progress * 65));
+        // 2. CLASSIFICATION & PARSING STRICT (ZÉRO DONNÉE FICTIVE)
+        const docType = classifyDocumentType(rawText);
+        const itemSummary: string[] = [];
+
+        // CAS A : PASSEPORT DÉTECTÉ OU PRÉSENCE DE MOTIFS PASSEPORT
+        if (docType === 'PASSEPORT' || /P<[A-Z]{3}|PASSPORT|PASSEPORT/i.test(rawText)) {
+          const parsedPassport = parsePassportText(rawText);
+          const detectedAs = 'PASSEPORT' as DocumentType;
+
+          if (parsedPassport.lastName) {
+            setLastName((prev) => prev || parsedPassport.lastName);
+            itemSummary.push(`Nom : ${parsedPassport.lastName}`);
+          }
+          if (parsedPassport.firstName) {
+            setFirstName((prev) => prev || parsedPassport.firstName);
+            itemSummary.push(`Prénom : ${parsedPassport.firstName}`);
+          }
+          if (parsedPassport.passportNumber) {
+            setPassportNum((prev) => prev || parsedPassport.passportNumber);
+            itemSummary.push(`N° Passeport : ${parsedPassport.passportNumber}`);
+          }
+          if (parsedPassport.nationality) {
+            setNationality((prev) => prev || parsedPassport.nationality);
+            itemSummary.push(`Nationalité : ${parsedPassport.nationality}`);
+          }
+          if (parsedPassport.birthDate) {
+            setBirthDate((prev) => prev || parsedPassport.birthDate);
+            itemSummary.push(`Naissance : ${parsedPassport.birthDate}`);
+          }
+          if (parsedPassport.expiryDate) {
+            setExpiryDate((prev) => prev || parsedPassport.expiryDate);
+            itemSummary.push(`Expiration : ${parsedPassport.expiryDate}`);
+          }
+
+          updateDocState({
+            status: 'DONE',
+            progress: 100,
+            stepText: 'Passeport biométrique analysé',
+            detectedType: detectedAs,
+            previewUrl: previewDataUrl,
+            summary: itemSummary.length > 0 ? itemSummary : ['Passeport identifié'],
+          });
+        } 
+        // CAS B : BILLET D'AVION / CONFIRMATION DE VOL DÉTECTÉ
+        else if (docType === 'BILLET_AVION' || /PNR|BOOKING|E-TICKET|SAUDIA|FLYNAS|AIRLINES/i.test(rawText)) {
+          const parsedFlight = parseFlightTicketText(rawText);
+          const detectedAs = 'BILLET_AVION' as DocumentType;
+
+          // Détection automatique Billet 1 (Aller) ou Billet 2 (Retour / Séparé)
+          setPnr((currentPnr) => {
+            setCompany((currentCompany) => {
+              if (!currentPnr && parsedFlight.pnr) {
+                // Premier PNR détecté -> Vol Aller
+                if (parsedFlight.airline) {
+                  // Mettre à jour la compagnie
+                }
+                return parsedFlight.airline || currentCompany;
+              } else if (currentPnr && parsedFlight.pnr && parsedFlight.pnr !== currentPnr) {
+                // Deuxième PNR différent détecté -> Activer automatiquement Billets séparés !
+                setHasSeparateTickets(true);
+                setReturnPnr(parsedFlight.pnr);
+                if (parsedFlight.airline) {
+                  setReturnCompany(parsedFlight.airline);
+                }
+                return currentCompany;
+              }
+              return currentCompany;
+            });
+
+            if (!currentPnr && parsedFlight.pnr) {
+              return parsedFlight.pnr;
             }
-          },
+            return currentPnr;
+          });
+
+          // Dates et destination
+          if (parsedFlight.departureDate) {
+            setDepartureDate(parsedFlight.departureDate);
+          }
+          if (parsedFlight.returnDate) {
+            setReturnDate(parsedFlight.returnDate);
+          }
+          if (parsedFlight.destination) {
+            setDestination(parsedFlight.destination);
+          }
+
+          if (parsedFlight.pnr) itemSummary.push(`PNR : ${parsedFlight.pnr}`);
+          if (parsedFlight.airline) itemSummary.push(`Compagnie : ${parsedFlight.airline}`);
+          if (parsedFlight.flightNumber) itemSummary.push(`Vol : ${parsedFlight.flightNumber}`);
+          if (parsedFlight.departureDate) itemSummary.push(`Vol du : ${parsedFlight.departureDate}`);
+
+          updateDocState({
+            status: 'DONE',
+            progress: 100,
+            stepText: 'Billet d\'avion analysé avec succès',
+            detectedType: detectedAs,
+            previewUrl: previewDataUrl,
+            summary: itemSummary.length > 0 ? itemSummary : ['Billet d\'avion identifié'],
+          });
+        } 
+        // CAS C : AUTRE DOCUMENT (ex: justificatif, visa antérieur)
+        else {
+          // Tentative d'analyse secondaire
+          const maybeFlight = parseFlightTicketText(rawText);
+          const maybePassport = parsePassportText(rawText);
+
+          if (maybePassport.passportNumber || maybePassport.lastName) {
+            updateDocState({
+              status: 'DONE',
+              progress: 100,
+              stepText: 'Document d\'identité analysé',
+              detectedType: 'PASSEPORT',
+              previewUrl: previewDataUrl,
+              summary: [`Données extraites : ${maybePassport.lastName || maybePassport.passportNumber}`],
+            });
+          } else if (maybeFlight.pnr || maybeFlight.airline) {
+            updateDocState({
+              status: 'DONE',
+              progress: 100,
+              stepText: 'Document de transport analysé',
+              detectedType: 'BILLET_AVION',
+              previewUrl: previewDataUrl,
+              summary: [`Vol extrait : ${maybeFlight.pnr || maybeFlight.airline}`],
+            });
+          } else {
+            updateDocState({
+              status: 'DONE',
+              progress: 100,
+              stepText: 'Document annexé au dossier',
+              detectedType: 'AUTRE',
+              previewUrl: previewDataUrl,
+              summary: ['Pièce jointe enregistrée (texte non structuré)'],
+            });
+          }
+        }
+
+      } catch (err) {
+        console.error('Erreur OCR sur fichier:', file.name, err);
+        updateDocState({
+          status: 'ERROR',
+          progress: 100,
+          stepText: 'Erreur lors de la lecture automatique',
+          errorMessage: 'Document illisible par l\'OCR ou fichier corrompu.',
+          summary: ['Lecture manuelle requise'],
         });
-        rawText = ocrResult.data.text || '';
       }
-
-      setScanStep('Extraction des entités réelles (norme OACI 9303)...');
-      setScanProgress(95);
-
-      // PARSING STRICT (ZÉRO DONNÉE FICTIVE)
-      const parsed = parsePassportText(rawText);
-      const found: string[] = [];
-
-      if (parsed.lastName) {
-        setLastName(parsed.lastName);
-        found.push(`Nom : ${parsed.lastName}`);
-      }
-      if (parsed.firstName) {
-        setFirstName(parsed.firstName);
-        found.push(`Prénom : ${parsed.firstName}`);
-      }
-      if (parsed.passportNumber) {
-        setPassportNum(parsed.passportNumber);
-        found.push(`Passeport : ${parsed.passportNumber}`);
-      }
-      if (parsed.nationality) {
-        setNationality(parsed.nationality);
-      }
-      if (parsed.birthDate) {
-        setBirthDate(parsed.birthDate);
-        found.push(`Naissance : ${parsed.birthDate}`);
-      }
-      if (parsed.expiryDate) {
-        setExpiryDate(parsed.expiryDate);
-        found.push(`Expiration : ${parsed.expiryDate}`);
-      }
-
-      setScanProgress(100);
-      setAiExtracted(true);
-      setDetectionSummary(found);
-
-      if (found.length === 0) {
-        setWarningMsg(
-          "Le texte du document n'a pas pu être lu avec une netteté suffisante. Veuillez saisir manuellement les informations ci-dessous."
-        );
-      } else if (found.length < 3) {
-        setWarningMsg(
-          "Certaines informations ont été détectées, mais d'autres sont incomplètes. Veuillez vérifier et compléter les champs vides ci-dessous."
-        );
-      }
-
-    } catch (err) {
-      console.error('Erreur lors du traitement du passeport:', err);
-      setWarningMsg(
-        "Impossible de lire automatiquement ce fichier. Vous pouvez saisir les informations directement dans le formulaire."
-      );
-      setAiExtracted(false);
-    } finally {
-      setIsScanning(false);
     }
+
+    setIsProcessingQueue(false);
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processPassportFile(e.target.files[0]);
+  const handleFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const filesArray = Array.from(e.target.files);
+      processFilesBatch(filesArray);
     }
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processPassportFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const filesArray = Array.from(e.dataTransfer.files);
+      processFilesBatch(filesArray);
     }
+  };
+
+  const removeDocument = (docId: string) => {
+    setDocuments((prev) => prev.filter((d) => d.id !== docId));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName || !lastName || !destination) {
-      alert('Veuillez renseigner au moins le nom, prénom et la destination.');
+      alert('Veuillez renseigner au moins le nom, le prénom et la destination.');
       return;
     }
 
-    createVisaCase(
+    // Convertir les documents cumulés en pièces jointes permanentes pour le dossier
+    const caseDocs: CaseDocument[] = documents.map((doc) => ({
+      id: doc.id,
+      case_id: '', // généré par le store
+      organization_id: session.organization_id,
+      type: doc.detectedType,
+      file_name: doc.name,
+      file_size: doc.size,
+      file_url: doc.previewUrl || '#',
+      created_at: new Date().toISOString(),
+    }));
+
+    const createdCase = createVisaCase(
       {
         traveler_first_name: firstName,
         traveler_last_name: lastName,
@@ -227,16 +382,17 @@ export default function NewCasePage() {
         organization_id: session.organization_id,
         organization_name: session.organization_name,
         created_by: session.user_id,
+        documents: caseDocs,
       },
       session
     );
 
-    router.push('/app/dashboard');
+    router.push(`/app/dossiers/${createdCase.id}`);
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-12">
-      {/* Top back */}
+    <div className="space-y-6 max-w-4xl mx-auto pb-16">
+      {/* Top back navigation */}
       <div className="flex items-center justify-between">
         <Link
           href="/app/dashboard"
@@ -256,33 +412,34 @@ export default function NewCasePage() {
             Nouveau dossier visa voyageur
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Déposez le passeport (PDF ou Image) : l&apos;IA extrait les données réelles sans inventer d&apos;informations.
+            Cumulez et glissez tous vos documents (Passeport, Billets d&apos;avion Aller/Retour, E-tickets) : l&apos;IA extrait automatiquement l&apos;identité et les vols, et les joint au dossier.
           </p>
         </div>
 
-        {/* ACTIVE OCR & DRAG-AND-DROP SCANNER BOX */}
+        {/* MULTI-DOCUMENTS CUMULATIVE SCANNER & DROPZONE */}
         <div className="p-5 rounded-2xl bg-gradient-to-r from-brand-50 to-indigo-50 border border-brand-200 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <span className="text-xs font-bold text-brand-900 flex items-center gap-1.5 uppercase tracking-wider">
               <Bot className="w-4 h-4 text-brand-600" />
-              Scanner Réel PDF & Images (MRZ + OCR)
+              Scanner IA Multi-Documents (Passeport + Billets d&apos;avion)
             </span>
-            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 self-start sm:self-auto">
               <Sparkles className="w-3 h-3 text-emerald-600" />
-              IA Active (Données réelles uniquement)
+              Reconnaissance OACI + PNR en temps réel
             </span>
           </div>
 
-          {/* Hidden File Input */}
+          {/* Hidden Multi-file Input */}
           <input
             type="file"
             ref={fileInputRef}
+            multiple
             accept="application/pdf,image/png,image/jpeg,image/webp"
-            onChange={handleFileSelect}
+            onChange={handleFilesSelect}
             className="hidden"
           />
 
-          {/* Interactive Dropzone */}
+          {/* Interactive Multi-Dropzone */}
           <div
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -294,14 +451,14 @@ export default function NewCasePage() {
                 : 'border-brand-300 hover:border-brand-500 bg-white/80 hover:bg-white'
             }`}
           >
-            {/* Laser scanning beam animation */}
-            {isScanning && (
+            {/* Pulsing scanning beam while processing */}
+            {isProcessingQueue && (
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-brand-500/20 to-transparent animate-pulse pointer-events-none h-full"></div>
             )}
 
             <div className="space-y-3">
               <div className="w-14 h-14 rounded-2xl bg-brand-100 text-brand-600 flex items-center justify-center mx-auto shadow-inner">
-                {isScanning ? (
+                {isProcessingQueue ? (
                   <RefreshCw className="w-7 h-7 animate-spin text-brand-600" />
                 ) : (
                   <UploadCloud className="w-7 h-7 text-brand-600" />
@@ -310,105 +467,151 @@ export default function NewCasePage() {
 
               <div>
                 <p className="text-sm font-bold text-slate-900">
-                  {uploadedFileName
-                    ? `Fichier sélectionné : ${uploadedFileName}`
-                    : 'Glissez-déposez le PDF ou l\'image du passeport, ou cliquez pour parcourir'}
+                  {isProcessingQueue
+                    ? 'Analyse IA des documents en cours...'
+                    : 'Glissez-déposez plusieurs documents à la fois ou cumulez-les ici'}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Prend en charge les fichiers PDF natifs et scannés, JPG, PNG, WEBP
+                  Passeports biométriques (PDF/Images) + Billets d&apos;avion (PDF E-ticket ou cartes d&apos;embarquement)
                 </p>
               </div>
 
-              <div className="pt-1">
+              <div className="pt-1 flex items-center justify-center gap-2">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
                   className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-md shadow-brand-600/30 inline-flex items-center gap-2"
                 >
-                  <Scan className="w-4 h-4" />
-                  <span>Sélectionner le passeport (PDF ou Image)</span>
+                  <Plus className="w-4 h-4" />
+                  <span>Sélectionner des documents (Multi-sélection)</span>
                 </button>
               </div>
             </div>
-
-            {/* Scanning Progress Bar */}
-            {isScanning && (
-              <div className="mt-4 p-4 bg-brand-50 rounded-xl border border-brand-200 space-y-2 text-left animate-in fade-in">
-                <div className="flex items-center justify-between text-xs font-semibold text-brand-900">
-                  <span className="flex items-center gap-1.5">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    {scanStep}
-                  </span>
-                  <span>{scanProgress}%</span>
-                </div>
-                <div className="w-full bg-brand-200 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-brand-600 h-full transition-all duration-300"
-                    style={{ width: `${scanProgress}%` }}
-                  ></div>
-                </div>
-              </div>
-            )}
-
-            {/* Success & Detection details */}
-            {aiExtracted && (
-              <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left space-y-2 animate-in fade-in">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 font-bold">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Document analysé : {uploadedFileName}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                    className="text-[11px] text-brand-700 hover:underline font-bold"
-                  >
-                    Changer de document
-                  </button>
-                </div>
-
-                {detectionSummary.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    <span className="font-semibold text-slate-700">Données réelles détectées :</span>
-                    {detectionSummary.map((item, i) => (
-                      <span key={i} className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold text-[11px]">
-                        {item}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )}
-
-            {/* Warning Message if OCR missed something */}
-            {warningMsg && (
-              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2 text-left">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>{warningMsg}</span>
-              </div>
-            )}
           </div>
+
+          {/* LISTE DES DOCUMENTS CUMULÉS & STATUT DE RECONNAISSANCE */}
+          {documents.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                <span className="flex items-center gap-1.5">
+                  <FileCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Documents cumulés dans le dossier ({documents.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-brand-700 hover:underline font-bold inline-flex items-center gap-1 text-[11px]"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Ajouter un autre document</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2.5">
+                {documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    {/* Left: Thumbnail & Info */}
+                    <div className="flex items-center gap-3">
+                      {doc.previewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={doc.previewUrl}
+                          alt={doc.name}
+                          className="w-12 h-12 object-cover rounded-lg border border-slate-200 shrink-0 bg-slate-50"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center shrink-0 border border-brand-100">
+                          {doc.detectedType === 'BILLET_AVION' ? (
+                            <Plane className="w-6 h-6 text-brand-600" />
+                          ) : (
+                            <FileText className="w-6 h-6 text-brand-600" />
+                          )}
+                        </div>
+                      )}
+
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-slate-900 truncate max-w-[220px] sm:max-w-xs">
+                            {doc.name}
+                          </p>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            ({formatFileSize(doc.size)})
+                          </span>
+                        </div>
+
+                        {/* Status / Step badge */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {doc.status === 'SCANNING' && (
+                            <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                              <RefreshCw className="w-3 h-3 animate-spin text-amber-600" />
+                              {doc.stepText} ({doc.progress}%)
+                            </span>
+                          )}
+
+                          {doc.status === 'DONE' && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1 ${
+                              doc.detectedType === 'PASSEPORT'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : doc.detectedType === 'BILLET_AVION'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {doc.detectedType === 'PASSEPORT' && <ShieldCheck className="w-3 h-3 text-emerald-600" />}
+                              {doc.detectedType === 'BILLET_AVION' && <Plane className="w-3 h-3 text-blue-600" />}
+                              {doc.detectedType === 'PASSEPORT'
+                                ? 'Passeport biométrique'
+                                : doc.detectedType === 'BILLET_AVION'
+                                ? 'Billet / Vol détecté'
+                                : 'Document annexé'}
+                            </span>
+                          )}
+
+                          {doc.status === 'ERROR' && (
+                            <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-rose-600" />
+                              {doc.errorMessage || 'Erreur d\'analyse'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Detected summary tags */}
+                        {doc.summary.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {doc.summary.map((tag, idx) => (
+                              <span
+                                key={idx}
+                                className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-medium"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => removeDocument(doc.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                        title="Retirer cette pièce jointe"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Preview thumbnail of the scanned PDF / image */}
-        {filePreview && (
-          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-4">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={filePreview}
-              alt="Aperçu document scanné"
-              className="w-24 h-16 object-contain bg-white rounded-lg border border-slate-300 shadow-2xs"
-            />
-            <div className="text-xs">
-              <p className="font-bold text-slate-800">{uploadedFileName}</p>
-              <p className="text-[11px] text-slate-500">
-                Aperçu visuel de la page du passeport rendu et analysé par le moteur
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* FORM */}
+        {/* FORMULAIRE PRÉ-REMPLI PAR L'IA */}
         <form onSubmit={handleSubmit} className="space-y-6 pt-2">
           {/* Destination & Travel Info */}
           <div className="space-y-4">
@@ -481,10 +684,10 @@ export default function NewCasePage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">
-                2. Données d&apos;identité du voyageur
+                2. Données d&apos;identité du voyageur (Extrait du Passeport)
               </h3>
               <span className="text-[11px] text-slate-500">
-                Vérifiez ou complétez les informations issues de votre passeport
+                Informations certifiées conformes OACI 9303
               </span>
             </div>
 
@@ -574,7 +777,7 @@ export default function NewCasePage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2 gap-2">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Plane className="w-4 h-4 text-brand-600" />
-                <span>3. Détails des vols & Billets d&apos;avion (Optionnel)</span>
+                <span>3. Détails des vols & Billets d&apos;avion (Extrait des e-tickets)</span>
               </h3>
               
               {/* Option billets séparés switch */}
@@ -621,7 +824,7 @@ export default function NewCasePage() {
                   </div>
                 </div>
                 <p className="text-[11px] text-slate-500 italic">
-                  💡 Si le voyageur a réservé son aller et son retour sur 2 billets séparés (2 compagnies ou 2 PNR distincts), cochez la case &laquo; Billets séparés &raquo; ci-dessus.
+                  💡 Si le voyageur a réservé son aller et son retour sur 2 billets séparés (2 compagnies ou 2 PNR distincts), cochez la case &laquo; Billets séparés &raquo; ci-dessus ou déposez le deuxième billet d&apos;avion pour détection automatique.
                 </p>
               </div>
             ) : (
@@ -721,7 +924,7 @@ export default function NewCasePage() {
               className="px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-md shadow-brand-600/30 flex items-center gap-2"
             >
               <Send className="w-4 h-4" />
-              <span>Transmettre le dossier au prestataire</span>
+              <span>Transmettre le dossier avec les pièces jointes</span>
             </button>
           </div>
         </form>

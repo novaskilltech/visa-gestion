@@ -7,7 +7,8 @@ import {
   UserSession, 
   CaseStatus, 
   DemoRequest,
-  AccountCredential 
+  AccountCredential,
+  CaseDocument 
 } from '@/types';
 import { 
   INITIAL_CASES, 
@@ -195,6 +196,61 @@ export function deleteVisaCase(
   const remaining = allCases.filter(c => c.id !== caseId);
   setStored(STORAGE_KEYS.CASES, remaining);
   return { success: true };
+}
+
+export function addDocumentToCase(
+  caseId: string,
+  docData: Omit<CaseDocument, 'id' | 'case_id' | 'organization_id' | 'created_at'>,
+  session: UserSession
+): VisaCase | null {
+  const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+  const target = allCases.find(c => c.id === caseId);
+  if (!target) return null;
+
+  // Contrôle d'autorisation multi-tenant
+  const canEdit = session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT' || target.organization_id === session.organization_id;
+  if (!canEdit) return null;
+
+  const newDoc: CaseDocument = {
+    ...docData,
+    id: `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    case_id: caseId,
+    organization_id: target.organization_id,
+    created_at: new Date().toISOString(),
+  };
+
+  const updated: VisaCase = {
+    ...target,
+    documents: [...(target.documents || []), newDoc],
+    updated_at: new Date().toISOString(),
+  };
+
+  const newCases = allCases.map(c => (c.id === caseId ? updated : c));
+  setStored(STORAGE_KEYS.CASES, newCases);
+  return updated;
+}
+
+export function removeDocumentFromCase(
+  caseId: string,
+  docId: string,
+  session: UserSession
+): VisaCase | null {
+  const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+  const target = allCases.find(c => c.id === caseId);
+  if (!target) return null;
+
+  const canEdit = session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT' || target.organization_id === session.organization_id;
+  if (!canEdit) return null;
+
+  const updated: VisaCase = {
+    ...target,
+    documents: (target.documents || []).filter(d => d.id !== docId),
+    updated_at: new Date().toISOString(),
+  };
+
+  const newCases = allCases.map(c => (c.id === caseId ? updated : c));
+  setStored(STORAGE_KEYS.CASES, newCases);
+  return updated;
 }
 
 export function getDashboardStats(session: UserSession) {
