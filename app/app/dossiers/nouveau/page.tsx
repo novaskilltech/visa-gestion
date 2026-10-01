@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getCurrentSession, createVisaCase } from '@/lib/store';
 import { VisaCase } from '@/types';
 import { parsePassportText, ParsedPassportData } from '@/lib/mrz-parser';
+import { processPdfFile } from '@/lib/pdf-reader';
 import Tesseract from 'tesseract.js';
 import { 
   Sparkles, 
@@ -21,7 +22,8 @@ import {
   Image as ImageIcon,
   Scan,
   RefreshCw,
-  FileCheck
+  FileCheck,
+  Info
 } from 'lucide-react';
 
 export default function NewCasePage() {
@@ -55,89 +57,124 @@ export default function NewCasePage() {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [extractionMeta, setExtractionMeta] = useState<ParsedPassportData | null>(null);
+  const [detectionSummary, setDetectionSummary] = useState<string[]>([]);
+  const [warningMsg, setWarningMsg] = useState<string | null>(null);
 
-  // REAL OCR EXTRACTION ENGINE
+  // REAL OCR EXTRACTION ENGINE (SUPPORT IMAGE & PDF)
   const processPassportFile = async (file: File) => {
     setIsScanning(true);
     setScanProgress(10);
     setScanStep('Chargement du document...');
     setUploadedFileName(file.name);
     setAiExtracted(false);
-
-    // Create preview
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => setFilePreview(e.target?.result as string);
-      reader.readAsDataURL(file);
-    } else {
-      setFilePreview(null);
-    }
+    setWarningMsg(null);
+    setDetectionSummary([]);
 
     try {
-      setScanStep('Analyse optique OCR & détection de la zone MRZ...');
-      setScanProgress(30);
+      let rawText = '';
 
-      // Perform OCR
-      const result = await Tesseract.recognize(file, 'fra+eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text' && m.progress) {
-            setScanProgress(Math.round(30 + m.progress * 60));
-          }
-        },
-      });
+      // CAS 1 : C'EST UN FICHIER PDF
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        setScanStep('Conversion du PDF et analyse des calques...');
+        setScanProgress(25);
 
-      setScanStep('Extraction et vérification des coordonnées...');
+        const pdfResult = await processPdfFile(file);
+        
+        // Afficher l'aperçu rendu de la première page du PDF
+        if (pdfResult.previewUrl) {
+          setFilePreview(pdfResult.previewUrl);
+        }
+
+        // Si le PDF contenait du texte numérique exploitable
+        if (pdfResult.text && pdfResult.text.length > 30) {
+          rawText = pdfResult.text;
+          setScanProgress(70);
+        } else if (pdfResult.canvas) {
+          // Si c'est un PDF scanné (image dans PDF), on lance l'OCR sur le canvas haute résolution
+          setScanStep('Lecture optique OCR de la page scannée du PDF...');
+          setScanProgress(40);
+
+          const ocrResult = await Tesseract.recognize(pdfResult.canvas, 'fra+eng', {
+            logger: (m) => {
+              if (m.status === 'recognizing text' && m.progress) {
+                setScanProgress(Math.round(40 + m.progress * 50));
+              }
+            },
+          });
+          rawText = ocrResult.data.text || '';
+        }
+      } 
+      // CAS 2 : C'EST UNE IMAGE (JPG, PNG, WEBP)
+      else {
+        setScanStep('Lecture de l\'image et analyse optique...');
+        setScanProgress(25);
+
+        // Aperçu de l'image
+        const reader = new FileReader();
+        reader.onload = (e) => setFilePreview(e.target?.result as string);
+        reader.readAsDataURL(file);
+
+        const ocrResult = await Tesseract.recognize(file, 'fra+eng', {
+          logger: (m) => {
+            if (m.status === 'recognizing text' && m.progress) {
+              setScanProgress(Math.round(25 + m.progress * 65));
+            }
+          },
+        });
+        rawText = ocrResult.data.text || '';
+      }
+
+      setScanStep('Extraction des entités réelles (norme OACI 9303)...');
       setScanProgress(95);
 
-      const rawText = result.data.text || '';
+      // PARSING STRICT (ZÉRO DONNÉE FICTIVE)
       const parsed = parsePassportText(rawText);
+      const found: string[] = [];
 
-      // If parser found fields from OCR
-      if (parsed.lastName || parsed.firstName || parsed.passportNumber) {
-        if (parsed.lastName) setLastName(parsed.lastName);
-        if (parsed.firstName) setFirstName(parsed.firstName);
-        if (parsed.passportNumber) setPassportNum(parsed.passportNumber);
-        if (parsed.nationality) setNationality(parsed.nationality);
-        if (parsed.birthDate) setBirthDate(parsed.birthDate);
-        if (parsed.expiryDate) setExpiryDate(parsed.expiryDate);
-        setExtractionMeta(parsed);
-      } else {
-        // Fallback: intelligent name deduction from filename if photo is low-resolution
-        const cleanBaseName = file.name.replace(/\.[^/.]+$/, '').replace(/[_\-\.]+/g, ' ');
-        const words = cleanBaseName.split(' ').filter(w => w.length > 2 && !['passeport', 'scan', 'doc', 'visa'].includes(w.toLowerCase()));
-        
-        const guessedLast = words[0] ? words[0].toUpperCase() : 'VOYAGEUR';
-        const guessedFirst = words[1] ? words[1].charAt(0).toUpperCase() + words[1].slice(1).toLowerCase() : '';
-        
-        setLastName(guessedLast);
-        if (guessedFirst) setFirstName(guessedFirst);
-        setPassportNum('26FR' + Math.floor(10000 + Math.random() * 90000));
-        setBirthDate('1988-06-14');
-        setExpiryDate('2032-05-20');
-        setExtractionMeta({
-          lastName: guessedLast,
-          firstName: guessedFirst,
-          passportNumber: '26FR' + Math.floor(10000 + Math.random() * 90000),
-          nationality: 'Française',
-          birthDate: '1988-06-14',
-          expiryDate: '2032-05-20',
-          confidence: 0.90,
-          detectedVia: 'ANALYSE_TEXTE_OCR',
-        });
+      if (parsed.lastName) {
+        setLastName(parsed.lastName);
+        found.push(`Nom : ${parsed.lastName}`);
+      }
+      if (parsed.firstName) {
+        setFirstName(parsed.firstName);
+        found.push(`Prénom : ${parsed.firstName}`);
+      }
+      if (parsed.passportNumber) {
+        setPassportNum(parsed.passportNumber);
+        found.push(`Passeport : ${parsed.passportNumber}`);
+      }
+      if (parsed.nationality) {
+        setNationality(parsed.nationality);
+      }
+      if (parsed.birthDate) {
+        setBirthDate(parsed.birthDate);
+        found.push(`Naissance : ${parsed.birthDate}`);
+      }
+      if (parsed.expiryDate) {
+        setExpiryDate(parsed.expiryDate);
+        found.push(`Expiration : ${parsed.expiryDate}`);
       }
 
       setScanProgress(100);
       setAiExtracted(true);
+      setDetectionSummary(found);
+
+      if (found.length === 0) {
+        setWarningMsg(
+          "Le texte du document n'a pas pu être lu avec une netteté suffisante. Veuillez saisir manuellement les informations ci-dessous."
+        );
+      } else if (found.length < 3) {
+        setWarningMsg(
+          "Certaines informations ont été détectées, mais d'autres sont incomplètes. Veuillez vérifier et compléter les champs vides ci-dessous."
+        );
+      }
+
     } catch (err) {
-      console.warn('Erreur OCR Tesseract, utilisation du parseur sécurisé:', err);
-      // Fallback without breaking UI
-      setLastName('BENALI');
-      setFirstName('Youssef');
-      setPassportNum('25FR88990');
-      setBirthDate('1985-07-22');
-      setExpiryDate('2031-10-15');
-      setAiExtracted(true);
+      console.error('Erreur lors du traitement du passeport:', err);
+      setWarningMsg(
+        "Impossible de lire automatiquement ce fichier. Vous pouvez saisir les informations directement dans le formulaire."
+      );
+      setAiExtracted(false);
     } finally {
       setIsScanning(false);
     }
@@ -160,7 +197,7 @@ export default function NewCasePage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName || !lastName || !destination) {
-      alert('Veuillez renseigner le nom, prénom et la destination.');
+      alert('Veuillez renseigner au moins le nom, prénom et la destination.');
       return;
     }
 
@@ -176,7 +213,7 @@ export default function NewCasePage() {
         travel_type: travelType,
         departure_date: departureDate,
         return_date: returnDate,
-        status: aiExtracted ? 'PRET_A_TRANSMETTRE' : 'A_VERIFIER',
+        status: (lastName && passportNum) ? 'PRET_A_TRANSMETTRE' : 'A_VERIFIER',
         flight_pnr: pnr,
         flight_company: company,
         organization_id: session.organization_id,
@@ -211,7 +248,7 @@ export default function NewCasePage() {
             Nouveau dossier visa voyageur
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Déposez le passeport de votre voyageur : l&apos;IA extrait automatiquement les coordonnées et pré-remplit la fiche.
+            Déposez le passeport (PDF ou Image) : l&apos;IA extrait les données réelles sans inventer d&apos;informations.
           </p>
         </div>
 
@@ -220,11 +257,11 @@ export default function NewCasePage() {
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-brand-900 flex items-center gap-1.5 uppercase tracking-wider">
               <Bot className="w-4 h-4 text-brand-600" />
-              Scanner Optique & Extraction IA (MRZ 9303)
+              Scanner Réel PDF & Images (MRZ + OCR)
             </span>
             <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-emerald-600" />
-              IA Active & Connectée
+              IA Active (Données réelles uniquement)
             </span>
           </div>
 
@@ -232,7 +269,7 @@ export default function NewCasePage() {
           <input
             type="file"
             ref={fileInputRef}
-            accept="image/*,application/pdf"
+            accept="application/pdf,image/png,image/jpeg,image/webp"
             onChange={handleFileSelect}
             className="hidden"
           />
@@ -267,10 +304,10 @@ export default function NewCasePage() {
                 <p className="text-sm font-bold text-slate-900">
                   {uploadedFileName
                     ? `Fichier sélectionné : ${uploadedFileName}`
-                    : 'Glissez-déposez le passeport scanné ou cliquez pour parcourir'}
+                    : 'Glissez-déposez le PDF ou l\'image du passeport, ou cliquez pour parcourir'}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Formats acceptés : PDF, JPG, PNG, WEBP • Reconnaissance automatique de la bande MRZ
+                  Prend en charge les fichiers PDF natifs et scannés, JPG, PNG, WEBP
                 </p>
               </div>
 
@@ -281,7 +318,7 @@ export default function NewCasePage() {
                   className="px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-md shadow-brand-600/30 inline-flex items-center gap-2"
                 >
                   <Scan className="w-4 h-4" />
-                  <span>Sélectionner un fichier sur cet appareil</span>
+                  <span>Sélectionner le passeport (PDF ou Image)</span>
                 </button>
               </div>
             </div>
@@ -305,37 +342,60 @@ export default function NewCasePage() {
               </div>
             )}
 
-            {/* Success message */}
+            {/* Success & Detection details */}
             {aiExtracted && (
-              <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold flex items-center justify-between animate-in fade-in">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Document analysé ({uploadedFileName}) : champs pré-remplis ci-dessous !</span>
+              <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 text-left space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Document analysé : {uploadedFileName}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                    className="text-[11px] text-brand-700 hover:underline font-bold"
+                  >
+                    Changer de document
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                  className="text-[11px] text-brand-700 hover:underline font-bold"
-                >
-                  Remplacer
-                </button>
+
+                {detectionSummary.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="font-semibold text-slate-700">Données réelles détectées :</span>
+                    {detectionSummary.map((item, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-semibold text-[11px]">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Warning Message if OCR missed something */}
+            {warningMsg && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2 text-left">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>{warningMsg}</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Preview thumbnail if image */}
+        {/* Preview thumbnail of the scanned PDF / image */}
         {filePreview && (
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={filePreview}
-              alt="Aperçu passeport"
-              className="w-20 h-14 object-cover rounded-lg border border-slate-300 shadow-2xs"
+              alt="Aperçu document scanné"
+              className="w-24 h-16 object-contain bg-white rounded-lg border border-slate-300 shadow-2xs"
             />
             <div className="text-xs">
               <p className="font-bold text-slate-800">{uploadedFileName}</p>
-              <p className="text-[11px] text-slate-500">Aperçu de la pièce d&apos;identité attachée au dossier</p>
+              <p className="text-[11px] text-slate-500">
+                Aperçu visuel de la page du passeport rendu et analysé par le moteur
+              </p>
             </div>
           </div>
         )}
@@ -413,25 +473,22 @@ export default function NewCasePage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-sm font-bold text-slate-900">
-                2. Données d&apos;identité du voyageur (extraites par l&apos;IA)
+                2. Données d&apos;identité du voyageur
               </h3>
-              {aiExtracted && (
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  Données Détectées
-                </span>
-              )}
+              <span className="text-[11px] text-slate-500">
+                Vérifiez ou complétez les informations issues de votre passeport
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nom de famille (tel qu&apos;écrit sur le passeport) *
+                  Nom de famille (sur le passeport) *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: BENALI"
+                  placeholder="Nom extrait du document"
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-brand-500 font-bold text-slate-900 uppercase"
@@ -445,7 +502,7 @@ export default function NewCasePage() {
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Youssef"
+                  placeholder="Prénom extrait du document"
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-brand-500 font-semibold text-slate-900"
@@ -458,7 +515,7 @@ export default function NewCasePage() {
                 </label>
                 <input
                   type="text"
-                  placeholder="Ex: 24AB12345"
+                  placeholder="N° de passeport"
                   value={passportNum}
                   onChange={(e) => setPassportNum(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs focus:ring-2 focus:ring-brand-500 font-mono font-bold text-slate-900"
