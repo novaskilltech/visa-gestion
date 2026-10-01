@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
   getCurrentSession, 
-  setCurrentSession, 
-  AVAILABLE_ACCOUNTS 
+  setCurrentSession 
 } from '@/lib/store';
 import { UserSession } from '@/types';
 import { 
@@ -39,13 +38,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     setSession(current);
   }, []);
 
-  const handleSwitchUser = (newUser: UserSession) => {
-    setCurrentSession(newUser);
-    setSession(newUser);
-    setRoleSwitcherOpen(false);
-    // Reload or refresh page to update multi-tenant view
-    router.refresh();
-  };
 
   const handleLogout = () => {
     router.push('/login');
@@ -132,45 +124,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               </button>
 
-              {/* Role Switcher Dropdown */}
+              {/* User Profile Dropdown */}
               {roleSwitcherOpen && (
-                <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in duration-150">
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                      Bascule de Compte
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Basculez entre votre agence et votre prestataire :
-                    </p>
+                <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in duration-150">
+                  <div className="p-3 border-b border-slate-100 space-y-1">
+                    <p className="text-xs font-bold text-slate-900">{session.name}</p>
+                    <p className="text-[11px] text-slate-500 font-medium">{session.organization_name}</p>
+                    <span className="inline-block text-[10px] px-2 py-0.5 rounded bg-brand-50 text-brand-700 font-bold border border-brand-200 mt-1">
+                      {session.role}
+                    </span>
                   </div>
-                  <div className="py-1 space-y-1">
-                    {AVAILABLE_ACCOUNTS.map((user) => (
-                      <button
-                        key={user.user_id}
-                        onClick={() => handleSwitchUser(user)}
-                        className={`w-full text-left p-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
-                          user.user_id === session.user_id
-                            ? 'bg-brand-50 text-brand-900 font-bold border border-brand-200'
-                            : 'hover:bg-slate-50 text-slate-700'
-                        }`}
-                      >
-                        <div>
-                          <p className="font-semibold">{user.name}</p>
-                          <p className="text-[10px] text-slate-700">{user.role} • {user.organization_name}</p>
-                        </div>
-                        {user.user_id === session.user_id && (
-                          <span className="w-2 h-2 rounded-full bg-brand-600"></span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="pt-2 border-t border-slate-100">
+                  <div className="pt-2">
                     <button
                       onClick={handleLogout}
-                      className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg flex items-center gap-2"
+                      className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg flex items-center gap-2 transition-colors"
                     >
                       <LogOut className="w-3.5 h-3.5" />
-                      Se déconnecter
+                      <span>Se déconnecter</span>
                     </button>
                   </div>
                 </div>
