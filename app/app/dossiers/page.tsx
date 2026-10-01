@@ -14,7 +14,8 @@ import {
   Clock, 
   Layers, 
   AlertCircle,
-  FileText
+  FileText,
+  FileCheck
 } from 'lucide-react';
 
 export default function DossiersPage() {
@@ -147,9 +148,22 @@ export default function DossiersPage() {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {filtered.length === 0 ? (
           <div className="p-12 text-center space-y-3">
-            <FileText className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="text-sm font-semibold text-slate-600">Aucun dossier trouvé</p>
-            <p className="text-xs text-slate-400">Essayez de modifier votre recherche ou filtre.</p>
+            <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto border border-brand-100">
+              <FileCheck className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-800">Aucun dossier pour le moment</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Votre espace agence est vierge de tout dossier fictif. Déposez un premier passeport (PDF ou Image) pour créer un dossier voyageur.
+            </p>
+            <div className="pt-2">
+              <Link
+                href="/app/dossiers/nouveau"
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs shadow-md shadow-brand-600/30 transition-all"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>+ Créer un nouveau dossier</span>
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">

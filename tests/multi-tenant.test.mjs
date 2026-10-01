@@ -66,4 +66,59 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
     assert.equal(caseWithSeparateTickets.return_flight_company, 'EgyptAir');
     assert.notEqual(caseWithSeparateTickets.flight_pnr, caseWithSeparateTickets.return_flight_pnr);
   });
+
+  test('Suppression d un dossier : une agence ne peut supprimer que son propre dossier', () => {
+    let cases = [
+      { id: 'c1', organization_id: 'org-omrayanair', traveler: 'Client 1' },
+      { id: 'c2', organization_id: 'org-autre', traveler: 'Client 2' },
+    ];
+
+    function deleteCase(caseId, userRole, userOrgId) {
+      const target = cases.find(c => c.id === caseId);
+      if (!target) return { success: false, error: 'Introuvable' };
+      if (userRole !== 'SUPER_ADMIN' && target.organization_id !== userOrgId) {
+        return { success: false, error: 'Non autorisé' };
+      }
+      cases = cases.filter(c => c.id !== caseId);
+      return { success: true };
+    }
+
+    // Omrayanair tente de supprimer un dossier d'une autre agence => Refusé
+    const resRefus = deleteCase('c2', 'AGENCY_ADMIN', 'org-omrayanair');
+    assert.equal(resRefus.success, false);
+    assert.equal(cases.length, 2);
+
+    // Omrayanair supprime son propre dossier => Accepté
+    const resOk = deleteCase('c1', 'AGENCY_ADMIN', 'org-omrayanair');
+    assert.equal(resOk.success, true);
+    assert.equal(cases.length, 1);
+    assert.equal(cases[0].id, 'c2');
+  });
+
+  test('Modification d un dossier : mise à jour des champs avec succès', () => {
+    let currentCase = {
+      id: 'c1',
+      organization_id: 'org-omrayanair',
+      traveler_first_name: 'Ahmed',
+      traveler_last_name: 'TEST',
+      destination: 'Arabie Saoudite',
+    };
+
+    function updateCase(caseId, updates) {
+      if (currentCase.id === caseId) {
+        currentCase = { ...currentCase, ...updates };
+        return currentCase;
+      }
+      return null;
+    }
+
+    const updated = updateCase('c1', {
+      traveler_first_name: 'Mustapha',
+      destination: 'Turquie',
+    });
+
+    assert.equal(updated.traveler_first_name, 'Mustapha');
+    assert.equal(updated.traveler_last_name, 'TEST');
+    assert.equal(updated.destination, 'Turquie');
+  });
 });

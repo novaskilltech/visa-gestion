@@ -75,41 +75,7 @@ export const INITIAL_MEMBERS: OrganizationMember[] = [
   },
 ];
 
-// NOUVELLE BASE DE DOSSIERS PROPRE POUR OMRAYANAIR
-export const INITIAL_CASES: VisaCase[] = [
-  {
-    id: 'case-omra-1',
-    reference: 'VISA-2026-OMRA01',
-    organization_id: 'org-omrayanair',
-    organization_name: 'Omrayanair',
-    traveler_first_name: 'Youssef',
-    traveler_last_name: 'EL ALAMI',
-    traveler_passport_num: '26FR77889',
-    traveler_nationality: 'Française',
-    traveler_birth_date: '1985-05-12',
-    traveler_passport_expiry: '2031-09-20',
-    destination_country: 'Arabie Saoudite',
-    travel_type: 'OMRA_HAJJ',
-    departure_date: '2026-11-15',
-    return_date: '2026-11-29',
-    status: 'PRET_A_TRANSMETTRE',
-    flight_pnr: 'SV142',
-    flight_company: 'Saudia Airlines',
-    notes: 'Dossier Omra transmis par l agence Omrayanair. En attente de traitement par le prestataire France Elite.',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    documents: [
-      {
-        id: 'doc-omra-1',
-        case_id: 'case-omra-1',
-        organization_id: 'org-omrayanair',
-        type: 'PASSEPORT',
-        file_name: 'passeport_el_alami_youssef.pdf',
-        file_url: '/mock-documents/passeport.pdf',
-        created_at: new Date().toISOString(),
-      },
-    ],
-  },
-];
+// BASE DE DOSSIERS VIERGE (0 dossier fictif - uniquement les vrais dossiers créés par l'utilisateur)
+export const INITIAL_CASES: VisaCase[] = [];
 
 export const INITIAL_DEMO_REQUESTS: DemoRequest[] = [];

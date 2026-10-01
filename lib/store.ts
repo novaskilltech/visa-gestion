@@ -17,13 +17,13 @@ import {
   CONFIGURED_ACCOUNTS 
 } from './mock-data';
 
-// Clés v2 pour forcer la mise à jour et purger les anciens comptes fictifs
+// Clés v3 : suppression de tous les dossiers fictifs, démarrage vierge
 const STORAGE_KEYS = {
-  CASES: 'visa_gestion_v2_cases',
-  ORGS: 'visa_gestion_v2_organizations',
-  MEMBERS: 'visa_gestion_v2_members',
-  SESSION: 'visa_gestion_v2_session',
-  DEMOS: 'visa_gestion_v2_demos',
+  CASES: 'visa_gestion_v3_cases',
+  ORGS: 'visa_gestion_v3_organizations',
+  MEMBERS: 'visa_gestion_v3_members',
+  SESSION: 'visa_gestion_v3_session',
+  DEMOS: 'visa_gestion_v3_demos',
 };
 
 export const AVAILABLE_ACCOUNTS: AccountCredential[] = CONFIGURED_ACCOUNTS;
@@ -150,6 +150,51 @@ export function updateCaseStatus(caseId: string, status: CaseStatus): void {
     return c;
   });
   setStored(STORAGE_KEYS.CASES, updated);
+}
+
+export function updateVisaCase(
+  caseId: string,
+  updatedData: Partial<Omit<VisaCase, 'id' | 'reference' | 'created_at'>>,
+  session: UserSession
+): VisaCase | null {
+  const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+  const target = allCases.find(c => c.id === caseId);
+  if (!target) return null;
+
+  // Contrôle d'autorisation multi-tenant (Agence propriétaire ou Super Admin)
+  const canEdit = session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT' || target.organization_id === session.organization_id;
+  if (!canEdit) return null;
+
+  const updated: VisaCase = {
+    ...target,
+    ...updatedData,
+    updated_at: new Date().toISOString(),
+  };
+
+  const newCases = allCases.map(c => (c.id === caseId ? updated : c));
+  setStored(STORAGE_KEYS.CASES, newCases);
+  return updated;
+}
+
+export function deleteVisaCase(
+  caseId: string,
+  session: UserSession
+): { success: boolean; error?: string } {
+  const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+  const target = allCases.find(c => c.id === caseId);
+  if (!target) {
+    return { success: false, error: 'Dossier introuvable.' };
+  }
+
+  // Contrôle d'autorisation multi-tenant (Agence propriétaire ou Super Admin)
+  const canDelete = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
+  if (!canDelete) {
+    return { success: false, error: 'Accès refusé : vous n\'avez pas les droits pour supprimer ce dossier.' };
+  }
+
+  const remaining = allCases.filter(c => c.id !== caseId);
+  setStored(STORAGE_KEYS.CASES, remaining);
+  return { success: true };
 }
 
 export function getDashboardStats(session: UserSession) {
