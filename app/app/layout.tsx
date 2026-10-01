@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { 
   getCurrentSession, 
   setCurrentSession, 
-  AVAILABLE_DEMO_USERS 
+  AVAILABLE_ACCOUNTS 
 } from '@/lib/store';
 import { UserSession } from '@/types';
 import { 
@@ -137,14 +137,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in duration-150">
                   <div className="px-3 py-2 border-b border-slate-100">
                     <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                      Simulateur Multi-Tenant (RLS)
+                      Bascule de Compte
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      Changez d&apos;utilisateur pour tester l&apos;étanchéité des données :
+                      Basculez entre votre agence et votre prestataire :
                     </p>
                   </div>
                   <div className="py-1 space-y-1">
-                    {AVAILABLE_DEMO_USERS.map((user) => (
+                    {AVAILABLE_ACCOUNTS.map((user) => (
                       <button
                         key={user.user_id}
                         onClick={() => handleSwitchUser(user)}

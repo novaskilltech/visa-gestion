@@ -119,9 +119,16 @@ export interface DemoRequest {
 
 export interface UserSession {
   user_id: string;
+  username?: string;
   email: string;
   name: string;
   role: UserRole;
   organization_id: string;
   organization_name: string;
 }
+
+export interface AccountCredential extends UserSession {
+  username: string;
+  password: string;
+}
+
