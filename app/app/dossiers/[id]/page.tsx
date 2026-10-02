@@ -286,19 +286,74 @@ export default function CaseDetailPage() {
     }
   };
 
-  const handleViewOrDownloadDoc = (doc: CaseDocument) => {
+  const handleViewDoc = (doc: CaseDocument) => {
     if (doc.file_url && (doc.file_url.startsWith('data:') || doc.file_url.startsWith('blob:') || doc.file_url.startsWith('http'))) {
       const win = window.open();
       if (win) {
         if (doc.file_url.startsWith('data:image')) {
-          win.document.write(`<title>${doc.file_name}</title><body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${doc.file_url}" style="max-width:95vw;max-height:95vh;border-radius:8px;box-shadow:0 10px 25px rgba(0,0,0,0.5);"/></body>`);
+          win.document.write(`<title>${doc.file_name}</title><body style="margin:0;background:#070e1a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${doc.file_url}" style="max-width:95vw;max-height:95vh;border-radius:12px;box-shadow:0 15px 35px rgba(0,0,0,0.6);border:1px solid rgba(0,210,255,0.3);"/></body>`);
         } else {
           win.location.href = doc.file_url;
         }
         return;
       }
     }
+    // Fallback simulation
     handleDownloadVisa();
+  };
+
+  const handleDownloadDoc = (doc: CaseDocument) => {
+    if (doc.file_url && (doc.file_url.startsWith('data:') || doc.file_url.startsWith('blob:') || doc.file_url.startsWith('http'))) {
+      const a = document.createElement('a');
+      a.href = doc.file_url;
+      a.download = doc.file_name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setDocFeedbackMsg({
+        text: `Téléchargement lancé : "${doc.file_name}"`,
+        type: 'success',
+      });
+      setTimeout(() => setDocFeedbackMsg(null), 3000);
+      return;
+    }
+
+    // Fichier placeholder ou document simulé
+    const blob = new Blob(
+      [`Document certifié Visa Gestion\nNom: ${doc.file_name}\nType: ${doc.type}\nDossier: ${caseData?.reference}\nOrganisme: ${caseData?.organization_name}\nDate: ${new Date().toISOString()}`],
+      { type: 'text/plain;charset=utf-8' }
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = doc.file_name.endsWith('.pdf') || doc.file_name.endsWith('.png') || doc.file_name.endsWith('.jpg') || doc.file_name.endsWith('.jpeg')
+      ? doc.file_name
+      : `${doc.file_name}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    setDocFeedbackMsg({
+      text: `Téléchargement lancé : "${doc.file_name}"`,
+      type: 'success',
+    });
+    setTimeout(() => setDocFeedbackMsg(null), 3000);
+  };
+
+  const handleDownloadAllDocs = () => {
+    if (!caseData?.documents || caseData.documents.length === 0) return;
+    caseData.documents.forEach((doc, idx) => {
+      setTimeout(() => {
+        handleDownloadDoc(doc);
+      }, idx * 350);
+    });
+
+    setDocFeedbackMsg({
+      text: `Téléchargement groupé lancé pour les ${caseData.documents.length} documents.`,
+      type: 'success',
+    });
+    setTimeout(() => setDocFeedbackMsg(null), 4000);
   };
 
   const steps: { key: CaseStatus; label: string }[] = [
@@ -849,19 +904,33 @@ export default function CaseDetailPage() {
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => docInputRef.current?.click()}
-            disabled={isUploadingDoc}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-xs font-bold text-brand-700 transition-colors shadow-2xs self-start sm:self-auto disabled:opacity-50"
-          >
-            {isUploadingDoc ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-600" />
-            ) : (
-              <Plus className="w-3.5 h-3.5 text-brand-600" />
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            {caseData.documents && caseData.documents.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDownloadAllDocs}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-bold text-sky-300 border border-sky-500/30 transition-colors shadow-2xs"
+                title="Télécharger l'intégralité des documents du dossier en un clic"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Tout télécharger ({caseData.documents.length})</span>
+              </button>
             )}
-            <span>Ajouter une pièce jointe (PDF/Image)</span>
-          </button>
+
+            <button
+              type="button"
+              onClick={() => docInputRef.current?.click()}
+              disabled={isUploadingDoc}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-brand-50 hover:bg-brand-100 border border-brand-200 text-xs font-bold text-brand-700 transition-colors shadow-2xs disabled:opacity-50"
+            >
+              {isUploadingDoc ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-brand-600" />
+              ) : (
+                <Plus className="w-3.5 h-3.5 text-brand-600" />
+              )}
+              <span>Ajouter une pièce jointe (PDF/Image)</span>
+            </button>
+          </div>
         </div>
 
         {/* Upload in progress banner */}
@@ -928,14 +997,24 @@ export default function CaseDetailPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex items-center gap-2 self-end sm:self-center flex-wrap">
                   <button
                     type="button"
-                    onClick={() => handleViewOrDownloadDoc(doc)}
+                    onClick={() => handleViewDoc(doc)}
                     className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-300 font-semibold text-slate-700 flex items-center gap-1.5 shadow-2xs transition-colors"
+                    title="Consulter l'aperçu du document"
                   >
                     <Eye className="w-3.5 h-3.5 text-slate-500" />
                     <span>Consulter</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadDoc(doc)}
+                    className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 border border-sky-300 font-bold text-sky-800 flex items-center gap-1.5 shadow-2xs transition-all hover:scale-102"
+                    title="Télécharger directement ce document"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Télécharger</span>
                   </button>
                   <button
                     type="button"
