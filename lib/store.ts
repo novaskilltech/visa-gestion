@@ -73,7 +73,8 @@ export function authenticate(identifier: string, password: string): { success: b
       account.username.toLowerCase() === cleanId ||
       account.email.toLowerCase() === cleanId ||
       (account.organization_name.toLowerCase() === cleanId) ||
-      (account.user_id === 'user-france-elite' && (cleanId === 'france-elite' || cleanId === 'france elite' || cleanId === 'franceelite'));
+      (account.user_id === 'user-france-elite' && (cleanId === 'france-elite' || cleanId === 'france elite' || cleanId === 'franceelite')) ||
+      (account.user_id === 'user-fabvoyage' && (cleanId === 'fabvoyage' || cleanId === 'fab voyage' || cleanId === 'fab-voyage'));
 
     if (matchUser) {
       if (account.password === cleanPass) {
@@ -85,11 +86,18 @@ export function authenticate(identifier: string, password: string): { success: b
     }
   }
 
-  return { success: false, error: 'Identifiant introuvable. Utilisez "omrayanair" ou "France Elite".' };
+  return { success: false, error: 'Identifiant introuvable. Veuillez vérifier vos identifiants de connexion.' };
 }
 
 export function getAllOrganizations(): Organization[] {
-  return getStored<Organization[]>(STORAGE_KEYS.ORGS, INITIAL_ORGANIZATIONS);
+  const stored = getStored<Organization[]>(STORAGE_KEYS.ORGS, INITIAL_ORGANIZATIONS);
+  const missing = INITIAL_ORGANIZATIONS.filter(initOrg => !stored.some(o => o.id === initOrg.id));
+  if (missing.length > 0) {
+    const merged = [...stored, ...missing];
+    setStored(STORAGE_KEYS.ORGS, merged);
+    return merged;
+  }
+  return stored;
 }
 
 export function updateOrganizationStatus(orgId: string, status: Organization['status']): void {
@@ -99,7 +107,14 @@ export function updateOrganizationStatus(orgId: string, status: Organization['st
 }
 
 export function getAllMembers(): OrganizationMember[] {
-  return getStored<OrganizationMember[]>(STORAGE_KEYS.MEMBERS, INITIAL_MEMBERS);
+  const stored = getStored<OrganizationMember[]>(STORAGE_KEYS.MEMBERS, INITIAL_MEMBERS);
+  const missing = INITIAL_MEMBERS.filter(initMem => !stored.some(m => m.id === initMem.id));
+  if (missing.length > 0) {
+    const merged = [...stored, ...missing];
+    setStored(STORAGE_KEYS.MEMBERS, merged);
+    return merged;
+  }
+  return stored;
 }
 
 export function getCasesForSession(session: UserSession): VisaCase[] {
@@ -110,7 +125,7 @@ export function getCasesForSession(session: UserSession): VisaCase[] {
     return allCases;
   }
   
-  // L'AGENCE (Omrayanair / AGENCY_ADMIN) ne voit QUE les dossiers d'Omrayanair
+  // L'AGENCE ne voit QUE ses propres dossiers
   return allCases.filter(c => c.organization_id === session.organization_id);
 }
 
@@ -125,7 +140,8 @@ export function createVisaCase(
 ): VisaCase {
   const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
   const nextNum = String(allCases.length + 1).padStart(3, '0');
-  const reference = `VISA-2026-OMRA${nextNum}`;
+  const orgCode = session.organization_name ? session.organization_name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase() : 'VISA';
+  const reference = `VISA-2026-${orgCode}${nextNum}`;
 
   const created: VisaCase = {
     ...newCaseData,

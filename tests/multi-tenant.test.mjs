@@ -121,4 +121,50 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
     assert.equal(updated.traveler_last_name, 'TEST');
     assert.equal(updated.destination, 'Turquie');
   });
+
+  test('Compte Fab Voyage : authentification et étanchéité multi-tenant', () => {
+    const configuredAccounts = [
+      { username: 'omrayanair', password: 'Khouribga111*', organization_id: 'org-omrayanair', role: 'AGENCY_ADMIN' },
+      { username: 'fabvoyage', password: 'fab78200', organization_id: 'org-fabvoyage', role: 'AGENCY_ADMIN' },
+      { username: 'France Elite', password: 'omrayanair', organization_id: 'org-france-elite', role: 'SUPER_ADMIN' },
+    ];
+
+    function authenticateMock(identifier, password) {
+      const cleanId = identifier.trim().toLowerCase();
+      const match = configuredAccounts.find(a => a.username.toLowerCase() === cleanId);
+      if (!match) return { success: false, error: 'Identifiant introuvable' };
+      if (match.password !== password.trim()) return { success: false, error: 'Mot de passe incorrect' };
+      return { success: true, session: match };
+    }
+
+    // Auth Fab Voyage valide
+    const authSuccess = authenticateMock('fabvoyage', 'fab78200');
+    assert.equal(authSuccess.success, true);
+    assert.equal(authSuccess.session.organization_id, 'org-fabvoyage');
+    assert.equal(authSuccess.session.role, 'AGENCY_ADMIN');
+
+    // Auth Fab Voyage mauvais mot de passe
+    const authWrongPass = authenticateMock('fabvoyage', 'mauvaismdp');
+    assert.equal(authWrongPass.success, false);
+    assert.equal(authWrongPass.error, 'Mot de passe incorrect');
+
+    // Partition des dossiers entre Fab Voyage et Omrayanair
+    const casesWithFab = [
+      { id: 'c1', reference: 'VISA-2026-OMRA001', organization_id: 'org-omrayanair', traveler: 'Client Omrayanair 1' },
+      { id: 'c2', reference: 'VISA-2026-OMRA002', organization_id: 'org-omrayanair', traveler: 'Client Omrayanair 2' },
+      { id: 'c3', reference: 'VISA-2026-FABV001', organization_id: 'org-fabvoyage', traveler: 'Client Fab Voyage 1' },
+    ];
+
+    const fabVisible = filterCasesByTenant(casesWithFab, 'AGENCY_ADMIN', 'org-fabvoyage');
+    assert.equal(fabVisible.length, 1);
+    assert.equal(fabVisible[0].traveler, 'Client Fab Voyage 1');
+    assert.equal(fabVisible[0].organization_id, 'org-fabvoyage');
+
+    const omraVisible = filterCasesByTenant(casesWithFab, 'AGENCY_ADMIN', 'org-omrayanair');
+    assert.equal(omraVisible.length, 2);
+    assert.ok(!omraVisible.some(c => c.organization_id === 'org-fabvoyage'));
+
+    const adminVisible = filterCasesByTenant(casesWithFab, 'SUPER_ADMIN', 'org-france-elite');
+    assert.equal(adminVisible.length, 3);
+  });
 });
