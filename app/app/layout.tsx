@@ -95,7 +95,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             {/* Active Organization Badge (Multi-tenant indicator) */}
             <div className="hidden sm:flex items-center gap-2 pl-4 border-l border-slate-200">
-              <span className="text-xs text-slate-700">Agence active :</span>
+              <span className="text-xs text-slate-700">{isSuperAdmin ? 'Prestataire actif :' : 'Agence active :'}</span>
               <span className="px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 flex items-center gap-1.5">
                 <Building className="w-3.5 h-3.5 text-brand-600" />
                 {session.organization_name}

@@ -120,7 +120,7 @@ export default function AdminAgenciesPage() {
             <tbody className="divide-y divide-slate-100">
               {filteredOrgs.map((org) => {
                 const orgMembers = members.filter(m => m.organization_id === org.id);
-                const adminUser = orgMembers.find(m => m.role === 'AGENCY_ADMIN');
+                const adminUser = orgMembers.find(m => m.role === 'AGENCY_ADMIN' || m.role === 'SUPER_ADMIN') || orgMembers[0];
                 const orgCases = cases.filter(c => c.organization_id === org.id);
                 const casesEnCours = orgCases.filter(c => c.status !== 'TERMINE').length;
                 const casesTermines = orgCases.filter(c => c.status === 'TERMINE').length;

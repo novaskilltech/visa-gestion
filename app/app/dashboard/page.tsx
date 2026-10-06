@@ -103,7 +103,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-900 text-sky-300 border border-sky-500/30 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-              {session.role === 'SUPER_ADMIN' ? 'Centre Consulaire France Elite' : 'Terminal Agence'}
+              {session.role === 'SUPER_ADMIN' ? `Centre Consulaire ${session.organization_name}` : 'Terminal Agence'}
             </span>
             <span className="text-xs text-slate-500">
               Organisation : <strong className="text-slate-900 font-bold">{session.organization_name}</strong>

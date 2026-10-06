@@ -56,6 +56,12 @@ export function getCurrentSession(): UserSession {
     setCurrentSession(defaultAccount);
     return defaultAccount;
   }
+  const matchingConfigured = AVAILABLE_ACCOUNTS.find(a => a.user_id === session.user_id);
+  if (matchingConfigured && (matchingConfigured.role !== session.role || matchingConfigured.name !== session.name)) {
+    const updatedSession = { ...session, role: matchingConfigured.role, name: matchingConfigured.name };
+    setCurrentSession(updatedSession);
+    return updatedSession;
+  }
   return session;
 }
 
@@ -108,13 +114,20 @@ export function updateOrganizationStatus(orgId: string, status: Organization['st
 
 export function getAllMembers(): OrganizationMember[] {
   const stored = getStored<OrganizationMember[]>(STORAGE_KEYS.MEMBERS, INITIAL_MEMBERS);
-  const missing = INITIAL_MEMBERS.filter(initMem => !stored.some(m => m.id === initMem.id));
-  if (missing.length > 0) {
-    const merged = [...stored, ...missing];
+  const updated = stored.map(storedMem => {
+    const initMem = INITIAL_MEMBERS.find(m => m.id === storedMem.id);
+    if (initMem && (initMem.role !== storedMem.role || initMem.name !== storedMem.name)) {
+      return { ...storedMem, role: initMem.role, name: initMem.name };
+    }
+    return storedMem;
+  });
+  const missing = INITIAL_MEMBERS.filter(initMem => !updated.some(m => m.id === initMem.id));
+  if (missing.length > 0 || JSON.stringify(updated) !== JSON.stringify(stored)) {
+    const merged = [...updated, ...missing];
     setStored(STORAGE_KEYS.MEMBERS, merged);
     return merged;
   }
-  return stored;
+  return updated;
 }
 
 export function getCasesForSession(session: UserSession): VisaCase[] {
