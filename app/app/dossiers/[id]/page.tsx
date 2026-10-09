@@ -102,6 +102,21 @@ export default function CaseDetailPage() {
   const [isTransmitModalOpen, setIsTransmitModalOpen] = useState(false);
   const [transmitSuccessMsg, setTransmitSuccessMsg] = useState<string | null>(null);
 
+  // Document Preview Modal State (In-app viewer garanti)
+  const [previewDocModal, setPreviewDocModal] = useState<{
+    isOpen: boolean;
+    docName: string;
+    docType: DocumentType;
+    url: string | null;
+    isLoading: boolean;
+  }>({
+    isOpen: false,
+    docName: '',
+    docType: 'AUTRE',
+    url: null,
+    isLoading: false,
+  });
+
   const [isLoadingCase, setIsLoadingCase] = useState(true);
 
   useEffect(() => {
@@ -304,6 +319,14 @@ export default function CaseDetailPage() {
         session
       );
 
+      // Sauvegarder dans IndexedDB pour téléchargement et prévisualisation haute fidélité
+      if (updated && updated.documents && updated.documents.length > 0) {
+        const addedDoc = updated.documents[updated.documents.length - 1];
+        if (addedDoc && previewUrl) {
+          await storeFileInIdb(addedDoc.id, previewUrl);
+        }
+      }
+
       if (updated) {
         setCaseData(updated);
         setDocFeedbackMsg({
@@ -346,7 +369,7 @@ export default function CaseDetailPage() {
       }
 
       // Attacher le document comme VISA_FINAL
-      addDocumentToCase(
+      const updatedCase = addDocumentToCase(
         caseData.id,
         {
           type: 'VISA_FINAL',
@@ -356,6 +379,13 @@ export default function CaseDetailPage() {
         },
         session
       );
+
+      if (updatedCase && updatedCase.documents && updatedCase.documents.length > 0) {
+        const addedDoc = updatedCase.documents[updatedCase.documents.length - 1];
+        if (addedDoc && previewUrl) {
+          await storeFileInIdb(addedDoc.id, previewUrl);
+        }
+      }
 
       // Basculer automatiquement le dossier à VISA_PRET
       updateCaseStatus(caseData.id, 'VISA_PRET');
@@ -404,25 +434,27 @@ export default function CaseDetailPage() {
   };
 
   const handleViewDoc = async (doc: CaseDocument) => {
+    setPreviewDocModal({
+      isOpen: true,
+      docName: doc.file_name,
+      docType: doc.type,
+      url: null,
+      isLoading: true,
+    });
+
     let url = doc.file_url;
     if (!url || url.startsWith('idb://') || url === '#') {
       const fromIdb = await getFileFromIdb(doc.id);
       if (fromIdb) url = fromIdb;
     }
 
-    if (url && (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http'))) {
-      const win = window.open();
-      if (win) {
-        if (url.startsWith('data:image')) {
-          win.document.write(`<title>${doc.file_name}</title><body style="margin:0;background:#070e1a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${url}" style="max-width:95vw;max-height:95vh;border-radius:12px;box-shadow:0 15px 35px rgba(0,0,0,0.6);border:1px solid rgba(0,210,255,0.3);"/></body>`);
-        } else {
-          win.location.href = url;
-        }
-        return;
-      }
-    }
-    // Fallback simulation
-    handleDownloadVisa();
+    setPreviewDocModal({
+      isOpen: true,
+      docName: doc.file_name,
+      docType: doc.type,
+      url: url || null,
+      isLoading: false,
+    });
   };
 
   const handleDownloadDoc = async (doc: CaseDocument) => {
@@ -1418,6 +1450,106 @@ export default function CaseDetailPage() {
           currentProviderId={caseData.assigned_provider_id}
           documentsCount={caseData.documents?.length || 0}
         />
+      )}
+
+      {/* VISIONNEUSE INTÉGRÉE DE DOCUMENTS (IN-APP DOCUMENT VIEWER) */}
+      {previewDocModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-cyan-400">
+                  {previewDocModal.docType === 'BILLET_AVION' ? (
+                    <Plane className="w-4 h-4" />
+                  ) : previewDocModal.docType === 'PASSEPORT' ? (
+                    <ShieldCheck className="w-4 h-4" />
+                  ) : (
+                    <FileText className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="truncate">
+                  <h3 className="text-sm font-bold truncate text-slate-100">{previewDocModal.docName}</h3>
+                  <p className="text-[10px] text-slate-400">
+                    Aperçu haute fidélité du document consulaire
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {previewDocModal.url && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const a = document.createElement('a');
+                      a.href = previewDocModal.url!;
+                      a.download = previewDocModal.docName;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Télécharger</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocModal(prev => ({ ...prev, isOpen: false, url: null }))}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+                  title="Fermer la visionneuse"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 bg-slate-100 overflow-auto flex items-center justify-center p-3 sm:p-6 min-h-[350px]">
+              {previewDocModal.isLoading ? (
+                <div className="text-center space-y-3 py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
+                  <p className="text-xs font-semibold text-slate-600">Chargement du document haute définition...</p>
+                </div>
+              ) : previewDocModal.url ? (
+                previewDocModal.url.startsWith('data:application/pdf') || previewDocModal.docName.toLowerCase().endsWith('.pdf') ? (
+                  <iframe
+                    src={previewDocModal.url}
+                    title={previewDocModal.docName}
+                    className="w-full h-[70vh] rounded-xl border border-slate-300 bg-white shadow-sm"
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={previewDocModal.url}
+                    alt={previewDocModal.docName}
+                    className="max-w-full max-h-[72vh] object-contain rounded-xl border border-slate-300 shadow-md bg-white"
+                  />
+                )
+              ) : (
+                <div className="text-center space-y-3 py-12 max-w-sm mx-auto">
+                  <AlertCircle className="w-10 h-10 text-amber-500 mx-auto" />
+                  <h4 className="text-sm font-bold text-slate-800">Document certifié Visa Gestion</h4>
+                  <p className="text-xs text-slate-500">
+                    Le fichier a été enregistré sur le dossier ({caseData.reference}). Vous pouvez télécharger la version certifiée directement.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const doc = caseData.documents?.find(d => d.file_name === previewDocModal.docName);
+                      if (doc) handleDownloadDoc(doc);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold text-xs inline-flex items-center gap-2 hover:bg-slate-800 shadow-sm"
+                  >
+                    <Download className="w-4 h-4 text-cyan-400" />
+                    <span>Télécharger la pièce jointe</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
