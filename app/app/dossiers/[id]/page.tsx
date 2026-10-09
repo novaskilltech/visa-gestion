@@ -45,7 +45,8 @@ import {
   Eye,
   UploadCloud,
   Send,
-  UserCheck
+  UserCheck,
+  MessageSquare
 } from 'lucide-react';
 
 export default function CaseDetailPage() {
@@ -514,14 +515,36 @@ export default function CaseDetailPage() {
                 </p>
               </div>
             </div>
-            {(session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT') && (
-              <button
-                onClick={() => setIsTransmitModalOpen(true)}
-                className="text-xs font-bold text-sky-700 hover:text-sky-900 underline"
-              >
-                Changer de prestataire
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {(() => {
+                const prov = availablePrestataires.find(p => p.id === caseData.assigned_provider_id);
+                if (prov?.phone) {
+                  return (
+                    <a
+                      href={`https://wa.me/${prov.phone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(
+                        `Bonjour ${prov.name},\nConcernant le dossier ${caseData.reference} (${caseData.traveler_last_name.toUpperCase()} ${caseData.traveler_first_name}) actuellement sur votre espace consulaire :\nhttps://visa-gestion.vercel.app/app/dossiers/${caseData.id}`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-sm transition-all"
+                      title="Envoyer un message WhatsApp au prestataire"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>WhatsApp ({prov.phone})</span>
+                    </a>
+                  );
+                }
+                return null;
+              })()}
+              {(session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT') && (
+                <button
+                  onClick={() => setIsTransmitModalOpen(true)}
+                  className="text-xs font-bold text-sky-700 hover:text-sky-900 underline"
+                >
+                  Changer de prestataire
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1219,6 +1242,8 @@ export default function CaseDetailPage() {
           providers={availablePrestataires}
           caseReference={caseData.reference}
           travelerName={`${caseData.traveler_last_name.toUpperCase()} ${caseData.traveler_first_name}`}
+          destinationCountry={caseData.destination_country}
+          travelType={caseData.travel_type}
           currentProviderId={caseData.assigned_provider_id}
           documentsCount={caseData.documents?.length || 0}
         />

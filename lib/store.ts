@@ -97,13 +97,20 @@ export function authenticate(identifier: string, password: string): { success: b
 
 export function getAllOrganizations(): Organization[] {
   const stored = getStored<Organization[]>(STORAGE_KEYS.ORGS, INITIAL_ORGANIZATIONS);
-  const missing = INITIAL_ORGANIZATIONS.filter(initOrg => !stored.some(o => o.id === initOrg.id));
-  if (missing.length > 0) {
-    const merged = [...stored, ...missing];
+  const updated = stored.map(storedOrg => {
+    const initOrg = INITIAL_ORGANIZATIONS.find(o => o.id === storedOrg.id);
+    if (initOrg && initOrg.phone && storedOrg.phone !== initOrg.phone) {
+      return { ...storedOrg, phone: initOrg.phone };
+    }
+    return storedOrg;
+  });
+  const missing = INITIAL_ORGANIZATIONS.filter(initOrg => !updated.some(o => o.id === initOrg.id));
+  if (missing.length > 0 || JSON.stringify(updated) !== JSON.stringify(stored)) {
+    const merged = [...updated, ...missing];
     setStored(STORAGE_KEYS.ORGS, merged);
     return merged;
   }
-  return stored;
+  return updated;
 }
 
 export function updateOrganizationStatus(orgId: string, status: Organization['status']): void {

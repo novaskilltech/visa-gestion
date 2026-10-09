@@ -249,6 +249,8 @@ export default function AdminDashboardPage() {
           providers={availablePrestataires}
           caseReference={transmittingCase.reference}
           travelerName={`${transmittingCase.traveler_last_name.toUpperCase()} ${transmittingCase.traveler_first_name}`}
+          destinationCountry={transmittingCase.destination_country}
+          travelType={transmittingCase.travel_type}
           currentProviderId={transmittingCase.assigned_provider_id}
           documentsCount={transmittingCase.documents?.length || 0}
         />

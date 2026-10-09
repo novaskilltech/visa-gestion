@@ -19,7 +19,7 @@ export const INITIAL_ORGANIZATIONS: Organization[] = [
     name: 'Fab Voyage',
     legal_name: 'Fab Voyage — Prestataire Consulaire',
     email: 'contact@fabvoyage.fr',
-    phone: '+33 1 30 00 00 00',
+    phone: '+33 6 61 41 63 63',
     country: 'France',
     address: 'Centre Consulaire Fab Voyage, 78200 Mantes-la-Jolie',
     status: 'ACTIVE',
