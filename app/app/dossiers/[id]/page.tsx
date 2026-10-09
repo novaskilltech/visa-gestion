@@ -240,7 +240,7 @@ export default function CaseDetailPage() {
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         setUploadDocStep('Rendu du PDF et analyse des calques...');
         const pdfRes = await processPdfFile(file);
-        previewUrl = pdfRes.previewUrl || '';
+        previewUrl = pdfRes.fileDataUrl || pdfRes.previewUrl || '';
         if (pdfRes.text && pdfRes.text.length > 30) {
           rawText = pdfRes.text;
         } else if (pdfRes.canvas) {
@@ -332,7 +332,7 @@ export default function CaseDetailPage() {
       let previewUrl = '';
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         const pdfRes = await processPdfFile(file);
-        previewUrl = pdfRes.previewUrl || '';
+        previewUrl = pdfRes.fileDataUrl || pdfRes.previewUrl || '';
       } else {
         const reader = new FileReader();
         previewUrl = await new Promise((res) => {

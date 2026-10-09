@@ -133,19 +133,22 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
 
   // Patterns explicites avec mots-clés
   const pnrPatterns = [
-    /(?:PNR|BOOKING\s*REF(?:ERENCE)?|R[ÉE]SERVATION|DOSSIER|RECORD\s*LOCATOR|RLOC|BOOKING\s*CODE)\s*[:.\-]?\s*([A-Z0-9]{5,7})\b/i,
-    /(?:CODE\s*(?:DE\s*)?R[ÉE]SERVATION)\s*[:.\-]?\s*([A-Z0-9]{5,7})\b/i,
-    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DOSSIER)?)\s*[:.\-]?\s*([A-Z0-9]{5,7})\b/i,
+    // PNR / Booking Ref / Réservation / Dossier / Record locator
+    /(?:PNR|BOOKING\s*(?:REF(?:ERENCE)?|CODE)|R[ÉE]SERVATION|DOSSIER|RECORD\s*LOCATOR|RLOC)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:CODE\s*(?:DE\s*)?R[ÉE]SERVATION)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DOSSIER|VOL|BILLET)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:E-?TICKET\s*(?:RECEIPT|CONFIRMATION)?\s*(?:NUMBER|NO)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
     /\b([A-Z0-9]{6})\b\s*(?:GDS|AMADEUS|SABRE|GALILEO)/i,
+    /(?:ELECTRONIC\s*TICKET|ETKT)\b.*?([A-Z0-9]{6})/i,
   ];
 
   for (const pat of pnrPatterns) {
     const match = text.match(pat);
     if (match && match[1]) {
       const candidate = match[1].trim().toUpperCase();
-      // Un PNR standard ne doit pas être un mot commun (ex: BILLET, FLIGHT, TICKET, VOYAGE)
-      const ignoredWords = ['BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART'];
-      if (!ignoredWords.includes(candidate)) {
+      // Exclure les faux positifs évidents (mots usuels ou dates)
+      const ignoredWords = ['BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 'CONFIRM', 'STATUS', 'NUMBER', 'DIRECT'];
+      if (!ignoredWords.includes(candidate) && !/^\d{4,8}$/.test(candidate)) {
         detectedPnr = candidate;
         summary.push(`Code PNR détecté : ${detectedPnr}`);
         break;
@@ -153,7 +156,23 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     }
   }
 
-  // 2. DÉTECTION DE LA COMPAGNIE AÉRIENNE
+  // Si pas encore de PNR trouvé, recherche générique d'un code alphanumérique de 6 caractères isolé
+  if (!detectedPnr) {
+    const genericPnrMatch = text.match(/\b([A-Z][A-Z0-9]{4,6})\b/g);
+    if (genericPnrMatch) {
+      const commonWords = ['TICKET', 'FLIGHT', 'TRAVEL', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 'ARRIVE', 'ONLINE', 'MOBILE', 'AGENCY', 'AVION'];
+      for (const m of genericPnrMatch) {
+        const word = m.toUpperCase();
+        if (word.length === 6 && /[0-9]/.test(word) && /[A-Z]/.test(word) && !commonWords.includes(word)) {
+          detectedPnr = word;
+          summary.push(`Code PNR (détecté par format) : ${detectedPnr}`);
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. DÉTECTION DE LA COMPAGNIE AÉRIENNE & NUMÉRO DE VOL
   let detectedAirline = '';
   let detectedFlightNum = '';
 
@@ -172,11 +191,18 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     if (detectedAirline) break;
   }
 
-  // Si pas de numéro de vol détecté via la compagnie, chercher pattern de vol générique (ex: SV142, MS892)
+  // Détection explicite du numéro de vol (ex: Flight: SV 142 ou Vol XY521 ou SV142)
   if (!detectedFlightNum) {
-    const flightMatch = text.match(/\b([A-Z]{2}\s*[0-9]{3,4})\b/);
-    if (flightMatch && flightMatch[1]) {
-      detectedFlightNum = flightMatch[1].toUpperCase().replace(/\s+/g, '');
+    const explicitFlightMatch = text.match(/(?:FLIGHT|VOL|VOL\s*N°|FLIGHT\s*NO)\s*[:.\-\s]*([A-Z0-9]{2}\s*[0-9]{2,4})\b/i);
+    if (explicitFlightMatch && explicitFlightMatch[1]) {
+      detectedFlightNum = explicitFlightMatch[1].toUpperCase().replace(/\s+/g, '');
+      summary.push(`Numéro de vol : ${detectedFlightNum}`);
+    } else {
+      const flightCodeMatch = text.match(/\b([A-Z]{2}\s*[0-9]{3,4})\b/);
+      if (flightCodeMatch && flightCodeMatch[1]) {
+        detectedFlightNum = flightCodeMatch[1].toUpperCase().replace(/\s+/g, '');
+        summary.push(`Numéro de vol identifié : ${detectedFlightNum}`);
+      }
     }
   }
 
@@ -200,8 +226,8 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
   let returnDate = '';
   const foundDates: { date: string; raw: string; index: number }[] = [];
 
-  // Format 1 : 15/11/2026 ou 15-11-2026
-  const numericDateRegex = /\b(\d{2})[\/\.-](\d{2})[\/\.-](\d{4})\b/g;
+  // Format 1 : 15/11/2026 ou 15-11-2026 ou 15.11.2026
+  const numericDateRegex = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/g;
   let numMatch: RegExpExecArray | null;
   while ((numMatch = numericDateRegex.exec(text)) !== null) {
     const d = parseInt(numMatch[1] || '0', 10);
@@ -216,13 +242,31 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     }
   }
 
-  // Format 2 : 20 NOV 2026 ou 20 NOVEMBRE 2026
-  const alphaDateRegex = /\b(\d{1,2})\s+([A-Za-zÀ-ÿ]{3,10})\s+(\d{4})\b/g;
+  // Format 1b : Format ISO 2026-11-20
+  const isoDateRegex = /\b(\d{4})[\/\-](\d{2})[\/\-](\d{2})\b/g;
+  let isoMatch: RegExpExecArray | null;
+  while ((isoMatch = isoDateRegex.exec(text)) !== null) {
+    const y = parseInt(isoMatch[1] || '0', 10);
+    const m = parseInt(isoMatch[2] || '0', 10);
+    const d = parseInt(isoMatch[3] || '0', 10);
+    if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2024 && y <= 2035) {
+      foundDates.push({
+        date: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
+        raw: isoMatch[0],
+        index: isoMatch.index,
+      });
+    }
+  }
+
+  // Format 2 : 20 NOV 2026 ou 20-NOV-2026 ou 20 NOVEMBRE 2026
+  const alphaDateRegex = /\b(\d{1,2})[\s\-\/]+([A-Za-zÀ-ÿ]{3,10})[\s\-\/]+(\d{2,4})\b/g;
   let alphaMatch: RegExpExecArray | null;
   while ((alphaMatch = alphaDateRegex.exec(text)) !== null) {
     const d = parseInt(alphaMatch[1] || '0', 10);
     const monthStr = (alphaMatch[2] || '').toUpperCase();
-    const y = parseInt(alphaMatch[3] || '0', 10);
+    let y = parseInt(alphaMatch[3] || '0', 10);
+    if (y < 100) y += 2000; // si format YY -> 20YY
+
     const monthNum = MONTH_NAMES[monthStr] || MONTH_NAMES[monthStr.substring(0, 3)] || MONTH_NAMES[monthStr.substring(0, 4)];
     if (monthNum && d >= 1 && d <= 31 && y >= 2024 && y <= 2035) {
       foundDates.push({
@@ -233,7 +277,24 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     }
   }
 
-  // Détermination de la date de départ et retour
+  // Format 3 : NOV 20, 2026 ou November 20 2026
+  const usDateRegex = /\b([A-Za-zÀ-ÿ]{3,10})\s+(\d{1,2}),?\s+(\d{4})\b/g;
+  let usMatch: RegExpExecArray | null;
+  while ((usMatch = usDateRegex.exec(text)) !== null) {
+    const monthStr = (usMatch[1] || '').toUpperCase();
+    const d = parseInt(usMatch[2] || '0', 10);
+    const y = parseInt(usMatch[3] || '0', 10);
+    const monthNum = MONTH_NAMES[monthStr] || MONTH_NAMES[monthStr.substring(0, 3)];
+    if (monthNum && d >= 1 && d <= 31 && y >= 2024 && y <= 2035) {
+      foundDates.push({
+        date: `${y}-${monthNum}-${String(d).padStart(2, '0')}`,
+        raw: usMatch[0],
+        index: usMatch.index,
+      });
+    }
+  }
+
+  // Détermination intelligente de la date de départ et retour
   if (foundDates.length > 0) {
     // Trier chronologiquement
     const uniqueDates = Array.from(new Set(foundDates.map(f => f.date))).sort();

@@ -138,7 +138,7 @@ export default function NewCasePage() {
         if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
           updateDocState({ stepText: 'Rendu du PDF et analyse des calques...', progress: 30 });
           const pdfResult = await processPdfFile(file);
-          previewDataUrl = pdfResult.previewUrl;
+          previewDataUrl = pdfResult.fileDataUrl || pdfResult.previewUrl;
 
           if (pdfResult.text && pdfResult.text.length > 30) {
             rawText = pdfResult.text;
@@ -214,8 +214,8 @@ export default function NewCasePage() {
             summary: itemSummary.length > 0 ? itemSummary : ['Passeport identifié'],
           });
         } 
-        // CAS B : BILLET D'AVION / CONFIRMATION DE VOL DÉTECTÉ
-        else if (docType === 'BILLET_AVION' || /PNR|BOOKING|E-TICKET|SAUDIA|FLYNAS|AIRLINES/i.test(rawText)) {
+        // CAS B : BILLET D'AVION / CONFIRMATION DE VOL DÉTECTÉ OU PRÉSENCE DE VOL / DATES
+        else if (docType === 'BILLET_AVION' || /PNR|BOOKING|E-TICKET|SAUDIA|FLYNAS|AIRLINES|VOL|FLIGHT|DEPART|ARRIV/i.test(rawText)) {
           const parsedFlight = parseFlightTicketText(rawText);
           const detectedAs = 'BILLET_AVION' as DocumentType;
 
@@ -224,9 +224,6 @@ export default function NewCasePage() {
             setCompany((currentCompany) => {
               if (!currentPnr && parsedFlight.pnr) {
                 // Premier PNR détecté -> Vol Aller
-                if (parsedFlight.airline) {
-                  // Mettre à jour la compagnie
-                }
                 return parsedFlight.airline || currentCompany;
               } else if (currentPnr && parsedFlight.pnr && parsedFlight.pnr !== currentPnr) {
                 // Deuxième PNR différent détecté -> Activer automatiquement Billets séparés !
@@ -237,7 +234,7 @@ export default function NewCasePage() {
                 }
                 return currentCompany;
               }
-              return currentCompany;
+              return parsedFlight.airline || currentCompany;
             });
 
             if (!currentPnr && parsedFlight.pnr) {
@@ -261,6 +258,7 @@ export default function NewCasePage() {
           if (parsedFlight.airline) itemSummary.push(`Compagnie : ${parsedFlight.airline}`);
           if (parsedFlight.flightNumber) itemSummary.push(`Vol : ${parsedFlight.flightNumber}`);
           if (parsedFlight.departureDate) itemSummary.push(`Vol du : ${parsedFlight.departureDate}`);
+          if (parsedFlight.returnDate) itemSummary.push(`Retour du : ${parsedFlight.returnDate}`);
 
           updateDocState({
             status: 'DONE',
@@ -278,6 +276,9 @@ export default function NewCasePage() {
           const maybePassport = parsePassportText(rawText);
 
           if (maybePassport.passportNumber || maybePassport.lastName) {
+            if (maybePassport.lastName) setLastName((prev) => prev || maybePassport.lastName);
+            if (maybePassport.firstName) setFirstName((prev) => prev || maybePassport.firstName);
+            if (maybePassport.passportNumber) setPassportNum((prev) => prev || maybePassport.passportNumber);
             updateDocState({
               status: 'DONE',
               progress: 100,
@@ -286,14 +287,18 @@ export default function NewCasePage() {
               previewUrl: previewDataUrl,
               summary: [`Données extraites : ${maybePassport.lastName || maybePassport.passportNumber}`],
             });
-          } else if (maybeFlight.pnr || maybeFlight.airline) {
+          } else if (maybeFlight.pnr || maybeFlight.airline || maybeFlight.departureDate) {
+            if (maybeFlight.pnr) setPnr((prev) => prev || maybeFlight.pnr);
+            if (maybeFlight.airline) setCompany((prev) => prev || maybeFlight.airline);
+            if (maybeFlight.departureDate) setDepartureDate(maybeFlight.departureDate);
+            if (maybeFlight.returnDate) setReturnDate(maybeFlight.returnDate);
             updateDocState({
               status: 'DONE',
               progress: 100,
               stepText: 'Document de transport analysé',
               detectedType: 'BILLET_AVION',
               previewUrl: previewDataUrl,
-              summary: [`Vol extrait : ${maybeFlight.pnr || maybeFlight.airline}`],
+              summary: [`Vol extrait : ${maybeFlight.pnr || maybeFlight.airline || maybeFlight.departureDate}`],
             });
           } else {
             updateDocState({
@@ -302,7 +307,7 @@ export default function NewCasePage() {
               stepText: 'Document annexé au dossier',
               detectedType: 'AUTRE',
               previewUrl: previewDataUrl,
-              summary: ['Pièce jointe enregistrée (texte non structuré)'],
+              summary: ['Pièce jointe enregistrée'],
             });
           }
         }

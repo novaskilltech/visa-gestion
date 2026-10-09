@@ -7,6 +7,8 @@ export interface PdfProcessingResult {
   text: string;
   canvas: HTMLCanvasElement | null;
   previewUrl: string | null;
+  fileDataUrl: string | null;
+  totalPages: number;
 }
 
 // Chargeur dynamique de la librairie PDF.js standard
@@ -58,56 +60,72 @@ function loadPdfJs(): Promise<any> {
 }
 
 export async function processPdfFile(file: File): Promise<PdfProcessingResult> {
+  // Convertir le fichier PDF entier en data:application/pdf URL ou garder le fichier d'origine
+  const reader = new FileReader();
+  const fileDataUrlPromise = new Promise<string>((resolve) => {
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+
   const arrayBuffer = await file.arrayBuffer();
   const pdfjsLib = await loadPdfJs();
 
   const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
   const pdf = await loadingTask.promise;
-  const page = await pdf.getPage(1);
+  const numPages = pdf.numPages || 1;
 
-  // 1. Extraction du texte numérique s'il existe dans le PDF
-  let rawText = '';
-  try {
-    const textContent = await page.getTextContent();
-    rawText = textContent.items
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map((item: any) => item.str || '')
-      .join(' ');
-  } catch (err) {
-    console.warn('Erreur lecture texte numérique PDF:', err);
+  // 1. Extraction du texte numérique sur TOUTES les pages du document
+  let fullText = '';
+  for (let i = 1; i <= Math.min(numPages, 5); i++) {
+    try {
+      const p = await pdf.getPage(i);
+      const textContent = await p.getTextContent();
+      const pageStr = textContent.items
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((item: any) => item.str || '')
+        .join(' ');
+      fullText += ' ' + pageStr;
+    } catch (pageErr) {
+      console.warn(`Erreur lecture texte page ${i}:`, pageErr);
+    }
   }
 
-  // 2. Rendu de la page 1 en Canvas haute résolution (échelle 2.0 pour OCR optimal)
+  // 2. Rendu de la page 1 en Canvas haute résolution (pour miniature et OCR scan si besoin)
   let canvas: HTMLCanvasElement | null = null;
   let previewUrl: string | null = null;
 
   try {
+    const page1 = await pdf.getPage(1);
     const scale = 2.0;
-    const viewport = page.getViewport({ scale });
+    const viewport = page1.getViewport({ scale });
     canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const ctx = canvas.getContext('2d');
 
     if (ctx) {
-      // Fond blanc
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      await page.render({
+      await page1.render({
         canvasContext: ctx,
         viewport: viewport,
       }).promise;
 
-      previewUrl = canvas.toDataURL('image/jpeg', 0.9);
+      previewUrl = canvas.toDataURL('image/jpeg', 0.85);
     }
   } catch (renderErr) {
     console.warn('Erreur rendu canvas PDF:', renderErr);
   }
 
+  const fileDataUrl = await fileDataUrlPromise;
+
   return {
-    text: rawText.trim(),
+    text: fullText.trim(),
     canvas,
     previewUrl,
+    fileDataUrl: fileDataUrl || previewUrl,
+    totalPages: numPages,
   };
 }
