@@ -220,28 +220,24 @@ export default function NewCasePage() {
           const detectedAs = 'BILLET_AVION' as DocumentType;
 
           // Détection automatique Billet 1 (Aller) ou Billet 2 (Retour / Séparé)
-          setPnr((currentPnr) => {
-            setCompany((currentCompany) => {
-              if (!currentPnr && parsedFlight.pnr) {
-                // Premier PNR détecté -> Vol Aller
-                return parsedFlight.airline || currentCompany;
-              } else if (currentPnr && parsedFlight.pnr && parsedFlight.pnr !== currentPnr) {
-                // Deuxième PNR différent détecté -> Activer automatiquement Billets séparés !
+          if (parsedFlight.pnr) {
+            setPnr((currentPnr) => {
+              if (!currentPnr) {
+                return parsedFlight.pnr;
+              } else if (currentPnr !== parsedFlight.pnr) {
+                // Deuxième billet avec PNR différent détecté !
                 setHasSeparateTickets(true);
                 setReturnPnr(parsedFlight.pnr);
-                if (parsedFlight.airline) {
-                  setReturnCompany(parsedFlight.airline);
-                }
-                return currentCompany;
+                if (parsedFlight.airline) setReturnCompany(parsedFlight.airline);
+                return currentPnr;
               }
-              return parsedFlight.airline || currentCompany;
+              return currentPnr;
             });
+          }
 
-            if (!currentPnr && parsedFlight.pnr) {
-              return parsedFlight.pnr;
-            }
-            return currentPnr;
-          });
+          if (parsedFlight.airline) {
+            setCompany((currentComp) => currentComp || parsedFlight.airline);
+          }
 
           // Dates et destination
           if (parsedFlight.departureDate) {

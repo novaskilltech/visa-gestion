@@ -46,20 +46,71 @@ const COUNTRY_CODES: Record<string, string> = {
   SEN: 'Sénégalaise',
   CIV: 'Ivoirienne',
   MLI: 'Malienne',
+  GIN: 'Guinéenne',
+  CMR: 'Camerounaise',
+  COG: 'Congolaise',
+  COD: 'Congolaise (RDC)',
+  BEN: 'Béninoise',
+  TGO: 'Togolaise',
+  BFA: 'Burkinabè',
+  NER: 'Nigérienne',
+  MRT: 'Mauritanienne',
+  TCD: 'Tchadienne',
+  GAB: 'Gabonaise',
+  COM: 'Comorienne',
+  MDG: 'Malgache',
+  MUS: 'Mauricienne',
   SAU: 'Saoudienne',
   UZB: 'Ouzbèke',
   CHN: 'Chinoise',
   IND: 'Indienne',
+  PAK: 'Pakistanaise',
+  BGD: 'Bangladaise',
+  TUR: 'Turque',
+  EGY: 'Égyptienne',
+  LBN: 'Libanaise',
+  SYR: 'Syrienne',
+  JOR: 'Jordanienne',
+  IRQ: 'Irakienne',
   USA: 'Américaine',
   GBR: 'Britannique',
+  CAN: 'Canadienne',
   BEL: 'Belge',
   CHE: 'Suisse',
   ESP: 'Espagnole',
   ITA: 'Italienne',
   DEU: 'Allemande',
-  TUR: 'Turque',
-  EGY: 'Égyptienne',
+  PRT: 'Portugaise',
+  NLD: 'Néerlandaise',
 };
+
+// Mots-clés de nationalités textuels (OCR)
+const NATIONALITY_TEXT_MAP: { match: RegExp; label: string }[] = [
+  { match: /\b(FRANCAISE|FRANÇAISE|FRENCH|FRANCE)\b/i, label: 'Française' },
+  { match: /\b(MAROCAINE|MOROCCAN|MAROC|MOROCCO)\b/i, label: 'Marocaine' },
+  { match: /\b(ALGERIENNE|ALGÉRIENNE|ALGERIAN|ALGERIE|ALGÉRIE)\b/i, label: 'Algérienne' },
+  { match: /\b(TUNISIENNE|TUNISIAN|TUNISIE)\b/i, label: 'Tunisienne' },
+  { match: /\b(SENEGALAISE|SÉNÉGALAISE|SENEGALESE|SENEGAL|SÉNÉGAL)\b/i, label: 'Sénégalaise' },
+  { match: /\b(IVOIRIENNE|IVORIAN|COTE D['’]IVOIRE|CÔTE D['’]IVOIRE)\b/i, label: 'Ivoirienne' },
+  { match: /\b(MALIENNE|MALIAN|MALI)\b/i, label: 'Malienne' },
+  { match: /\b(GUINEENNE|GUINÉENNE|GUINEAN|GUINEE|GUINÉE)\b/i, label: 'Guinéenne' },
+  { match: /\b(CAMEROUNAISE|CAMEROONIAN|CAMEROUN)\b/i, label: 'Camerounaise' },
+  { match: /\b(COMORIENNE|COMORIAN|COMORES)\b/i, label: 'Comorienne' },
+  { match: /\b(MAURITANIENNE|MAURITANIAN|MAURITANIE)\b/i, label: 'Mauritanienne' },
+  { match: /\b(SAOUDIENNE|SAUDI)\b/i, label: 'Saoudienne' },
+  { match: /\b(TURQUE|TURKISH|TURQUIE)\b/i, label: 'Turque' },
+  { match: /\b(EGYPTIENNE|ÉGYPTIENNE|EGYPTIAN|EGYPTE|ÉGYPTE)\b/i, label: 'Égyptienne' },
+  { match: /\b(LIBANAISE|LEBANESE|LIBAN)\b/i, label: 'Libanaise' },
+  { match: /\b(SYRIENNE|SYRIAN|SYRIE)\b/i, label: 'Syrienne' },
+  { match: /\b(BRITANNIQUE|BRITISH|ROYAUME-UNI|UNITED KINGDOM)\b/i, label: 'Britannique' },
+  { match: /\b(AMERICAINE|AMÉRICAINE|AMERICAN|ETATS-UNIS|ÉTATS-UNIS|USA)\b/i, label: 'Américaine' },
+  { match: /\b(BELGE|BELGIAN|BELGIQUE)\b/i, label: 'Belge' },
+  { match: /\b(SUISSE|SWISS)\b/i, label: 'Suisse' },
+  { match: /\b(ESPAGNOLE|SPANISH|ESPAGNE)\b/i, label: 'Espagnole' },
+  { match: /\b(ITALIENNE|ITALIAN|ITALIE)\b/i, label: 'Italienne' },
+  { match: /\b(ALLEMANDE|GERMAN|ALLEMAGNE)\b/i, label: 'Allemande' },
+  { match: /\b(CANADIENNE|CANADIAN|CANADA)\b/i, label: 'Canadienne' },
+];
 
 export function parsePassportText(text: string): ParsedPassportData {
   if (!text || text.trim().length === 0) {
@@ -67,7 +118,7 @@ export function parsePassportText(text: string): ParsedPassportData {
       lastName: '',
       firstName: '',
       passportNumber: '',
-      nationality: 'Française',
+      nationality: '',
       birthDate: '',
       expiryDate: '',
       confidence: 0,
@@ -89,14 +140,14 @@ export function parsePassportText(text: string): ParsedPassportData {
       const line2 = (cleanLines[i + 1] || '').toUpperCase();
 
       try {
-        const countryCode = cleanLine1.substring(2, 5);
+        const countryCode = cleanLine1.substring(2, 5).replace(/</g, '');
         const namePart = cleanLine1.substring(5);
         const nameSplit = namePart.split('<<');
         const lastName = (nameSplit[0] || '').replace(/</g, ' ').trim();
         const firstName = (nameSplit[1] || '').replace(/</g, ' ').trim();
 
         let passportNum = '';
-        let nationality = COUNTRY_CODES[countryCode] || (countryCode ? countryCode : 'Française');
+        let nationality = COUNTRY_CODES[countryCode] || '';
         let birthDate = '';
         let expiryDate = '';
 
@@ -106,9 +157,11 @@ export function parsePassportText(text: string): ParsedPassportData {
             passportNum = passRaw;
           }
 
-          const natCode = line2.substring(10, 13);
+          const natCode = line2.substring(10, 13).replace(/</g, '');
           if (COUNTRY_CODES[natCode]) {
             nationality = COUNTRY_CODES[natCode];
+          } else if (!nationality && COUNTRY_CODES[countryCode]) {
+            nationality = COUNTRY_CODES[countryCode];
           }
 
           const birthRaw = line2.substring(13, 19);
@@ -118,12 +171,22 @@ export function parsePassportText(text: string): ParsedPassportData {
           expiryDate = parseYYMMDD(expRaw, true);
         }
 
+        // Si la nationalité n'a pas été trouvée dans le code ISO MRZ, scanner le texte
+        if (!nationality) {
+          for (const item of NATIONALITY_TEXT_MAP) {
+            if (item.match.test(text)) {
+              nationality = item.label;
+              break;
+            }
+          }
+        }
+
         if (lastName || firstName || passportNum) {
           return {
             lastName,
             firstName,
             passportNumber: passportNum,
-            nationality,
+            nationality: nationality || 'Française',
             birthDate,
             expiryDate,
             confidence: (lastName && firstName && passportNum) ? 0.98 : 0.85,
@@ -168,8 +231,21 @@ export function parsePassportText(text: string): ParsedPassportData {
       detectedFirstName = prenomMatch[1].trim();
     }
     // Nationalité
-    if (/FRANCE|FRANCAISE|FRANÇAISE/i.test(l)) {
-      detectedNat = 'Française';
+    for (const item of NATIONALITY_TEXT_MAP) {
+      if (item.match.test(l)) {
+        detectedNat = item.label;
+        break;
+      }
+    }
+  }
+
+  // Si pas de nationalité trouvée par ligne, scanner le texte complet
+  if (detectedNat === 'Française') {
+    for (const item of NATIONALITY_TEXT_MAP) {
+      if (item.match.test(text)) {
+        detectedNat = item.label;
+        break;
+      }
     }
   }
 

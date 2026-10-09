@@ -128,16 +128,24 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
 
   const summary: string[] = [];
 
-  // 1. DÉTECTION DU CODE PNR (RÉSERVATION)
+  // 1. DÉTECTION DU CODE PNR (RÉSERVATION / CONFIRMATION / DOSSIER PASSAGER)
   let detectedPnr = '';
 
-  // Patterns explicites avec mots-clés
+  // Patterns explicites avec tous les libellés de compagnies aériennes
   const pnrPatterns = [
-    // PNR / Booking Ref / Réservation / Dossier / Record locator
-    /(?:PNR|BOOKING\s*(?:REF(?:ERENCE)?|CODE)|R[ÉE]SERVATION|DOSSIER|RECORD\s*LOCATOR|RLOC)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
-    /(?:CODE\s*(?:DE\s*)?R[ÉE]SERVATION)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
-    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DOSSIER|VOL|BILLET)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Code de confirmation", "Confirmation code", "Code confirmation"
+    /(?:CODE\s*(?:DE\s*)?CONFIRMATION|CONFIRMATION\s*(?:CODE|NO|NUMBER|NUM[ÉE]RO)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Code de réservation", "Booking reference", "Booking code", "Réf réservation"
+    /(?:CODE\s*(?:DE\s*)?R[ÉE]SERVATION|BOOKING\s*(?:REF(?:ERENCE)?|CODE)|R[ÉE]SERVATION)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Numéro du dossier", "Dossier passager", "Numéro de dossier voyageur", "Record Locator", "RLOC"
+    /(?:NUM[ÉE]RO\s*(?:DU\s*)?DOSSIER(?:\s*(?:DU\s*)?PASSAGER)?|DOSSIER\s*(?:PASSAGER|VOYAGEUR)?|RECORD\s*LOCATOR|RLOC)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "PNR", "Code PNR", "PNR No"
+    /(?:CODE\s*)?PNR(?:\s*(?:NUMBER|NO|N°))?\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Référence dossier", "Référence billet", "Référence vol"
+    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DU\s*)?(?:DOSSIER|VOL|BILLET|VOYAGE)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "E-ticket receipt / confirmation"
     /(?:E-?TICKET\s*(?:RECEIPT|CONFIRMATION)?\s*(?:NUMBER|NO)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // Format GDS standard
     /\b([A-Z0-9]{6})\b\s*(?:GDS|AMADEUS|SABRE|GALILEO)/i,
     /(?:ELECTRONIC\s*TICKET|ETKT)\b.*?([A-Z0-9]{6})/i,
   ];
@@ -147,7 +155,7 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     if (match && match[1]) {
       const candidate = match[1].trim().toUpperCase();
       // Exclure les faux positifs évidents (mots usuels ou dates)
-      const ignoredWords = ['BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 'CONFIRM', 'STATUS', 'NUMBER', 'DIRECT'];
+      const ignoredWords = ['BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 'CONFIRM', 'STATUS', 'NUMBER', 'DIRECT', 'PASSEPORT'];
       if (!ignoredWords.includes(candidate) && !/^\d{4,8}$/.test(candidate)) {
         detectedPnr = candidate;
         summary.push(`Code PNR détecté : ${detectedPnr}`);
@@ -156,18 +164,29 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     }
   }
 
-  // Si pas encore de PNR trouvé, recherche générique d'un code alphanumérique de 6 caractères isolé
+  // 1b. Si pas de mot-clé trouvé, détection intelligente de code de réservation standard à 6 caractères
+  // (Le standard mondial aéronautique IATA/GDS : 6 caractères alphanumériques avec lettres majuscules)
   if (!detectedPnr) {
-    const genericPnrMatch = text.match(/\b([A-Z][A-Z0-9]{4,6})\b/g);
-    if (genericPnrMatch) {
-      const commonWords = ['TICKET', 'FLIGHT', 'TRAVEL', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 'ARRIVE', 'ONLINE', 'MOBILE', 'AGENCY', 'AVION'];
-      for (const m of genericPnrMatch) {
-        const word = m.toUpperCase();
-        if (word.length === 6 && /[0-9]/.test(word) && /[A-Z]/.test(word) && !commonWords.includes(word)) {
-          detectedPnr = word;
-          summary.push(`Code PNR (détecté par format) : ${detectedPnr}`);
-          break;
-        }
+    // Chercher les tokens de 6 caractères exactement (ex: 6X7Y9Z, ABC12D, QWERTY, 3XYZ45)
+    const sixCharTokens = text.match(/\b([A-Z0-9]{6})\b/g) || [];
+    const ignoredDictionary = new Set([
+      'BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 
+      'ARRIVE', 'ONLINE', 'MOBILE', 'AGENCY', 'AVION', 'TRAVEL', 'SYSTEM', 'NUMBER',
+      'AIRLINE', 'AIRWAY', 'PARIS', 'JEDDAH', 'MADINA', 'RIYADH', 'AIRBUS', 'BOEING',
+      'SECOND', 'MINUTE', 'GUEST', 'CLASS', 'ADULT', 'CHLD', 'INFANT', 'STATUS',
+      'ISSUED', 'NOTICE', 'REFUND', 'CHANGE', 'BEFORE', 'OCTOBR', 'DECEMB', 'PASSEP'
+    ]);
+
+    for (const token of sixCharTokens) {
+      const code = token.toUpperCase();
+      // Un PNR standard IATA comporte 6 caractères, contient des lettres majuscules et n'est pas une heure/date (pas 100% chiffres)
+      const hasLetters = /[A-Z]/.test(code);
+      const isPureDigits = /^[0-9]{6}$/.test(code);
+      if (hasLetters && !isPureDigits && !ignoredDictionary.has(code)) {
+        // Favoriser les codes avec au moins un chiffre ou structure PNR typique
+        detectedPnr = code;
+        summary.push(`Code PNR (format réservation) : ${detectedPnr}`);
+        break;
       }
     }
   }
