@@ -7,7 +7,8 @@ import {
   getAllOrganizations, 
   getCasesForSession,
   getAvailablePrestataires,
-  transmitCaseToProvider
+  transmitCaseToProvider,
+  syncCasesWithCloud
 } from '@/lib/store';
 import { Organization, VisaCase, UserSession } from '@/types';
 import { TransmitModal } from '@/components/TransmitModal';
@@ -42,6 +43,10 @@ export default function AdminDashboardPage() {
       setOrganizations(getAllOrganizations());
       setAllCases(getCasesForSession(current));
       setAvailablePrestataires(getAvailablePrestataires());
+      // Synchro cloud en direct
+      syncCasesWithCloud().then(() => {
+        setAllCases(getCasesForSession(current));
+      });
     }
   }, []);
 
@@ -247,6 +252,7 @@ export default function AdminDashboardPage() {
           onClose={() => setTransmittingCase(null)}
           onTransmit={handleTransmit}
           providers={availablePrestataires}
+          caseId={transmittingCase.id}
           caseReference={transmittingCase.reference}
           travelerName={`${transmittingCase.traveler_last_name.toUpperCase()} ${transmittingCase.traveler_first_name}`}
           destinationCountry={transmittingCase.destination_country}

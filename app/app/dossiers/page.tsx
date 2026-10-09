@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getCurrentSession, getCasesForSession } from '@/lib/store';
+import { getCurrentSession, getCasesForSession, syncCasesWithCloud } from '@/lib/store';
 import { VisaCase, UserSession, CaseStatus } from '@/types';
 import { 
   PlusCircle, 
@@ -31,6 +31,10 @@ export default function DossiersPage() {
     setSession(current);
     if (current) {
       setCases(getCasesForSession(current));
+      // Synchro cloud en direct (Supabase)
+      syncCasesWithCloud().then(() => {
+        setCases(getCasesForSession(current));
+      });
     }
   }, []);
 

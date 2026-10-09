@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { 
   getCurrentSession, 
   getCasesForSession, 
-  getDashboardStats 
+  getDashboardStats,
+  syncCasesWithCloud
 } from '@/lib/store';
 import { VisaCase, UserSession } from '@/types';
 import { 
@@ -36,8 +37,11 @@ export default function DashboardPage() {
     const current = getCurrentSession();
     setSession(current);
     if (current) {
-      const userCases = getCasesForSession(current);
-      setCases(userCases);
+      setCases(getCasesForSession(current));
+      // Synchro cloud en direct (Supabase) pour récupérer les dossiers transmis depuis d'autres appareils
+      syncCasesWithCloud().then(() => {
+        setCases(getCasesForSession(current));
+      });
     }
   }, []);
 

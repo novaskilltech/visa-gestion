@@ -21,6 +21,7 @@ interface TransmitModalProps {
   onClose: () => void;
   onTransmit: (providerId: string, providerName: string, notes: string) => void;
   providers: Organization[];
+  caseId?: string;
   caseReference: string;
   travelerName: string;
   destinationCountry?: string;
@@ -34,6 +35,7 @@ export function TransmitModal({
   onClose,
   onTransmit,
   providers,
+  caseId,
   caseReference,
   travelerName,
   destinationCountry,
@@ -72,6 +74,7 @@ export function TransmitModal({
     if (sendWhatsApp) {
       const whatsappUrl = getWhatsAppTransmissionUrl({
         phone: provider.phone,
+        caseId,
         caseReference,
         travelerName,
         destinationCountry,

@@ -6,13 +6,15 @@ import Link from 'next/link';
 import { 
   getCurrentSession, 
   getCaseById, 
+  fetchCaseByIdAsync,
   updateCaseStatus,
   updateVisaCase,
   deleteVisaCase,
   addDocumentToCase,
   removeDocumentFromCase,
   getAvailablePrestataires,
-  transmitCaseToProvider
+  transmitCaseToProvider,
+  syncCasesWithCloud
 } from '@/lib/store';
 import { VisaCase, UserSession, CaseStatus, CaseDocument, DocumentType, Organization } from '@/types';
 import { TransmitModal } from '@/components/TransmitModal';
@@ -96,13 +98,28 @@ export default function CaseDetailPage() {
   const [isTransmitModalOpen, setIsTransmitModalOpen] = useState(false);
   const [transmitSuccessMsg, setTransmitSuccessMsg] = useState<string | null>(null);
 
+  const [isLoadingCase, setIsLoadingCase] = useState(true);
+
   useEffect(() => {
     const current = getCurrentSession();
     setSession(current);
     if (current && caseId) {
-      const found = getCaseById(caseId, current);
-      setCaseData(found);
       setAvailablePrestataires(getAvailablePrestataires());
+      const localFound = getCaseById(caseId, current);
+      if (localFound) {
+        setCaseData(localFound);
+        setIsLoadingCase(false);
+      }
+      
+      // Récupération ou mise à jour depuis Supabase
+      fetchCaseByIdAsync(caseId, current).then((cloudFound) => {
+        if (cloudFound) {
+          setCaseData(cloudFound);
+        }
+        setIsLoadingCase(false);
+      });
+    } else {
+      setIsLoadingCase(false);
     }
   }, [caseId]);
 
@@ -117,6 +134,15 @@ export default function CaseDetailPage() {
   };
 
   if (!session) return null;
+
+  if (isLoadingCase) {
+    return (
+      <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600 mx-auto"></div>
+        <p className="text-xs font-semibold text-slate-600">Chargement et synchronisation du dossier consulaire...</p>
+      </div>
+    );
+  }
 
   if (!caseData) {
     return (
@@ -1240,6 +1266,7 @@ export default function CaseDetailPage() {
           onClose={() => setIsTransmitModalOpen(false)}
           onTransmit={handleTransmitCase}
           providers={availablePrestataires}
+          caseId={caseData.id}
           caseReference={caseData.reference}
           travelerName={`${caseData.traveler_last_name.toUpperCase()} ${caseData.traveler_first_name}`}
           destinationCountry={caseData.destination_country}

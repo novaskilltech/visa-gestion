@@ -17,8 +17,8 @@ import {
   INITIAL_DEMO_REQUESTS,
   CONFIGURED_ACCOUNTS 
 } from './mock-data';
+import { supabase } from './supabase';
 
-// Clés v3 : suppression de tous les dossiers fictifs, démarrage vierge
 const STORAGE_KEYS = {
   CASES: 'visa_gestion_v3_cases',
   ORGS: 'visa_gestion_v3_organizations',
@@ -48,9 +48,97 @@ function setStored<T>(key: string, value: T): void {
   }
 }
 
+// -------------------------------------------------------------
+// SYNCHRONISATION SUPABASE EN BACKGROUND (FIRE-AND-FORGET)
+// -------------------------------------------------------------
+async function syncCaseToSupabase(c: VisaCase) {
+  try {
+    await supabase.from('visa_cases').upsert({
+      id: c.id,
+      reference: c.reference,
+      organization_id: c.organization_id,
+      organization_name: c.organization_name,
+      traveler_first_name: c.traveler_first_name,
+      traveler_last_name: c.traveler_last_name,
+      traveler_passport_num: c.traveler_passport_num,
+      traveler_nationality: c.traveler_nationality,
+      traveler_birth_date: c.traveler_birth_date,
+      traveler_passport_expiry: c.traveler_passport_expiry,
+      destination_country: c.destination_country,
+      travel_type: c.travel_type,
+      departure_date: c.departure_date,
+      return_date: c.return_date,
+      status: c.status,
+      flight_pnr: c.flight_pnr,
+      flight_company: c.flight_company,
+      has_separate_tickets: c.has_separate_tickets,
+      return_flight_pnr: c.return_flight_pnr,
+      return_flight_company: c.return_flight_company,
+      flight_dates: c.flight_dates,
+      assigned_agent_id: c.assigned_agent_id,
+      assigned_agent_name: c.assigned_agent_name,
+      assigned_provider_id: c.assigned_provider_id,
+      assigned_provider_name: c.assigned_provider_name,
+      transmitted_at: c.transmitted_at,
+      visa_document_url: c.visa_document_url,
+      notes: c.notes,
+      created_by: c.created_by,
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      documents: c.documents || [],
+    });
+  } catch (err) {
+    console.error('Supabase sync error:', err);
+  }
+}
+
+async function deleteCaseFromSupabase(caseId: string) {
+  try {
+    await supabase.from('visa_cases').delete().eq('id', caseId);
+  } catch (err) {
+    console.error('Supabase delete error:', err);
+  }
+}
+
+/**
+ * Récupère tous les dossiers depuis Supabase et fusionne avec le localStorage
+ */
+export async function syncCasesWithCloud(): Promise<VisaCase[]> {
+  try {
+    const { data, error } = await supabase.from('visa_cases').select('*');
+    if (!error && Array.isArray(data)) {
+      const localCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, []);
+      
+      // Fusion intelligente par date de mise à jour (updated_at)
+      const mergedMap = new Map<string, VisaCase>();
+      for (const lc of localCases) {
+        mergedMap.set(lc.id, lc);
+      }
+      for (const rc of data) {
+        const local = mergedMap.get(rc.id);
+        if (!local || new Date(rc.updated_at) >= new Date(local.updated_at)) {
+          mergedMap.set(rc.id, rc as VisaCase);
+        }
+      }
+
+      const allMerged = Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      setStored(STORAGE_KEYS.CASES, allMerged);
+      return allMerged;
+    }
+  } catch (err) {
+    console.error('Cloud sync error:', err);
+  }
+  return getStored<VisaCase[]>(STORAGE_KEYS.CASES, []);
+}
+
+// -------------------------------------------------------------
+// SESSIONS & ORGANISATIONS
+// -------------------------------------------------------------
 export function getCurrentSession(): UserSession {
   const session = getStored<UserSession | null>(STORAGE_KEYS.SESSION, null);
-  // Si pas de session ou si ancienne session avec comptes supprimés (Atlas/Salam)
   if (!session || !AVAILABLE_ACCOUNTS.some(a => a.organization_id === session.organization_id)) {
     const defaultAccount = AVAILABLE_ACCOUNTS[0]; // Omrayanair
     setCurrentSession(defaultAccount);
@@ -73,7 +161,6 @@ export function authenticate(identifier: string, password: string): { success: b
   const cleanId = identifier.trim().toLowerCase();
   const cleanPass = password.trim();
 
-  // Recherche du compte correspondant
   for (const account of AVAILABLE_ACCOUNTS) {
     const matchUser = 
       account.username.toLowerCase() === cleanId ||
@@ -137,15 +224,16 @@ export function getAllMembers(): OrganizationMember[] {
   return updated;
 }
 
+// -------------------------------------------------------------
+// DOSSIERS DE VISAS (AVEC PERSISTANCE SUPABASE CLOUD AUTOMATIQUE)
+// -------------------------------------------------------------
 export function getCasesForSession(session: UserSession): VisaCase[] {
   const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
   
-  // SEUL LE SUPER ADMIN (Omrayanair) voit l'ensemble des dossiers de la plateforme
   if (session.role === 'SUPER_ADMIN') {
     return allCases;
   }
   
-  // Les prestataires voient les dossiers créés par leur organisation ET ceux qui leur ont été formellement transmis
   return allCases.filter(c => 
     c.organization_id === session.organization_id || 
     c.assigned_provider_id === session.organization_id
@@ -154,7 +242,6 @@ export function getCasesForSession(session: UserSession): VisaCase[] {
 
 export function getAvailablePrestataires(): Organization[] {
   const orgs = getAllOrganizations();
-  // Les prestataires disponibles sont les organisations partenaires actives distinctes d'Omrayanair
   return orgs.filter(o => o.id !== 'org-omrayanair' && o.status === 'ACTIVE');
 }
 
@@ -169,7 +256,6 @@ export function transmitCaseToProvider(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  // Seul le Super Admin (Omrayanair) peut transmettre un dossier à un prestataire
   if (session && session.role !== 'SUPER_ADMIN') {
     return null;
   }
@@ -183,19 +269,50 @@ export function transmitCaseToProvider(
     assigned_provider_id: providerId,
     assigned_provider_name: providerName,
     transmitted_at: new Date().toISOString(),
-    status: 'EN_TRAITEMENT', // Passage en traitement auprès du prestataire consulaire
+    status: 'EN_TRAITEMENT',
     notes: target.notes ? `${target.notes}\n${transmitNote}` : transmitNote,
     updated_at: new Date().toISOString(),
   };
 
   const newCases = allCases.map(c => (c.id === caseId ? updated : c));
   setStored(STORAGE_KEYS.CASES, newCases);
+  syncCaseToSupabase(updated); // Synchronisation instantanée Supabase
   return updated;
 }
 
 export function getCaseById(caseId: string, session: UserSession): VisaCase | null {
   const cases = getCasesForSession(session);
   return cases.find(c => c.id === caseId) || null;
+}
+
+export async function fetchCaseByIdAsync(caseId: string, session: UserSession): Promise<VisaCase | null> {
+  // Vérifie d'abord localement
+  let found = getCaseById(caseId, session);
+  if (found) return found;
+
+  // Si pas présent localement, chercher dans Supabase
+  try {
+    const { data, error } = await supabase.from('visa_cases').select('*').eq('id', caseId).maybeSingle();
+    if (!error && data) {
+      const c = data as VisaCase;
+      // Contrôle de permission multi-tenant
+      const hasAccess = session.role === 'SUPER_ADMIN' || 
+        c.organization_id === session.organization_id || 
+        c.assigned_provider_id === session.organization_id;
+      
+      if (hasAccess) {
+        // Enregistrer localement pour les futurs accès
+        const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+        if (!allCases.some(x => x.id === c.id)) {
+          setStored(STORAGE_KEYS.CASES, [c, ...allCases]);
+        }
+        return c;
+      }
+    }
+  } catch (err) {
+    console.error('fetchCaseByIdAsync error:', err);
+  }
+  return null;
 }
 
 export function createVisaCase(
@@ -219,18 +336,22 @@ export function createVisaCase(
 
   const updated = [created, ...allCases];
   setStored(STORAGE_KEYS.CASES, updated);
+  syncCaseToSupabase(created); // Synchronisation instantanée Supabase
   return created;
 }
 
 export function updateCaseStatus(caseId: string, status: CaseStatus): void {
   const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+  let updatedTarget: VisaCase | null = null;
   const updated = allCases.map(c => {
     if (c.id === caseId) {
-      return { ...c, status, updated_at: new Date().toISOString() };
+      updatedTarget = { ...c, status, updated_at: new Date().toISOString() };
+      return updatedTarget;
     }
     return c;
   });
   setStored(STORAGE_KEYS.CASES, updated);
+  if (updatedTarget) syncCaseToSupabase(updatedTarget);
 }
 
 export function updateVisaCase(
@@ -242,7 +363,6 @@ export function updateVisaCase(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  // Contrôle d'autorisation multi-tenant (Organisation propriétaire, Prestataire assigné ou Super Admin Omrayanair)
   const canEdit = session.role === 'SUPER_ADMIN' || 
     target.organization_id === session.organization_id ||
     target.assigned_provider_id === session.organization_id;
@@ -256,6 +376,7 @@ export function updateVisaCase(
 
   const newCases = allCases.map(c => (c.id === caseId ? updated : c));
   setStored(STORAGE_KEYS.CASES, newCases);
+  syncCaseToSupabase(updated); // Synchronisation instantanée Supabase
   return updated;
 }
 
@@ -269,7 +390,6 @@ export function deleteVisaCase(
     return { success: false, error: 'Dossier introuvable.' };
   }
 
-  // Contrôle d'autorisation multi-tenant (Organisation propriétaire ou Super Admin Omrayanair)
   const canDelete = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
   if (!canDelete) {
     return { success: false, error: 'Accès refusé : vous n\'avez pas les droits pour supprimer ce dossier.' };
@@ -277,6 +397,7 @@ export function deleteVisaCase(
 
   const remaining = allCases.filter(c => c.id !== caseId);
   setStored(STORAGE_KEYS.CASES, remaining);
+  deleteCaseFromSupabase(caseId); // Suppression sur Supabase
   return { success: true };
 }
 
@@ -289,7 +410,6 @@ export function addDocumentToCase(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  // Contrôle d'autorisation multi-tenant
   const canEdit = session.role === 'SUPER_ADMIN' || 
     target.organization_id === session.organization_id ||
     target.assigned_provider_id === session.organization_id;
@@ -311,6 +431,7 @@ export function addDocumentToCase(
 
   const newCases = allCases.map(c => (c.id === caseId ? updated : c));
   setStored(STORAGE_KEYS.CASES, newCases);
+  syncCaseToSupabase(updated); // Synchronisation instantanée Supabase
   return updated;
 }
 
@@ -336,6 +457,7 @@ export function removeDocumentFromCase(
 
   const newCases = allCases.map(c => (c.id === caseId ? updated : c));
   setStored(STORAGE_KEYS.CASES, newCases);
+  syncCaseToSupabase(updated); // Synchronisation instantanée Supabase
   return updated;
 }
 

@@ -13,6 +13,7 @@ export function formatPhoneNumberForWhatsApp(phone?: string): string {
  * Construit le texte pré-rédigé officiel de notification WhatsApp pour le prestataire
  */
 export function buildWhatsAppTransmissionMessage(params: {
+  caseId?: string;
   caseReference: string;
   travelerName: string;
   destinationCountry?: string;
@@ -22,6 +23,7 @@ export function buildWhatsAppTransmissionMessage(params: {
   providerName?: string;
 }): string {
   const {
+    caseId,
     caseReference,
     travelerName,
     destinationCountry = 'Arabie Saoudite',
@@ -30,6 +32,10 @@ export function buildWhatsAppTransmissionMessage(params: {
     notes,
     providerName,
   } = params;
+
+  const directUrl = caseId 
+    ? `https://visa-gestion.vercel.app/app/dossiers/${caseId}` 
+    : `https://visa-gestion.vercel.app/app/dossiers`;
 
   let msg = `Bonjour${providerName ? ' ' + providerName : ''},\n\n`;
   msg += `📢 *Nouveau dossier visa transmis sur la plateforme VISA GESTION*\n\n`;
@@ -43,7 +49,7 @@ export function buildWhatsAppTransmissionMessage(params: {
   }
 
   msg += `\n🔗 *Lien direct sécurisé vers le dossier :*\n`;
-  msg += `https://visa-gestion.vercel.app/app/dossiers\n\n`;
+  msg += `${directUrl}\n\n`;
   msg += `Merci de prendre en charge ce dossier consulaire dès réception.`;
 
   return msg;
@@ -54,6 +60,7 @@ export function buildWhatsAppTransmissionMessage(params: {
  */
 export function getWhatsAppTransmissionUrl(params: {
   phone?: string;
+  caseId?: string;
   caseReference: string;
   travelerName: string;
   destinationCountry?: string;
