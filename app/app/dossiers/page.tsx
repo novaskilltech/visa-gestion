@@ -263,7 +263,48 @@ export default function DossiersPage() {
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 font-mono text-[11px]">
-                      {c.departure_date || 'Non défini'}
+                      {c.departure_date ? (
+                        <div>
+                          <span>{c.departure_date}</span>
+                          {(() => {
+                            const dep = new Date(c.departure_date);
+                            const diffDays = Math.ceil((dep.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                            if (diffDays >= 0 && diffDays <= 3) {
+                              return (
+                                <div className="mt-1">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                                    <Clock className="w-2.5 h-2.5 text-rose-600" />
+                                    J-{diffDays} Urgent
+                                  </span>
+                                </div>
+                              );
+                            } else if (diffDays > 3 && diffDays <= 7) {
+                              return (
+                                <div className="mt-1">
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    <Clock className="w-2.5 h-2.5 text-amber-700" />
+                                    J-{diffDays}
+                                  </span>
+                                </div>
+                              );
+                            } else if (diffDays > 7) {
+                              return (
+                                <div className="mt-0.5 text-[9px] text-slate-400 font-sans">
+                                  dans {diffDays} j
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="mt-0.5 text-[9px] text-slate-400 font-sans italic">
+                                  passé
+                                </div>
+                              );
+                            }
+                          })()}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 italic">Non défini</span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       {c.status === 'VISA_PRET' ? (

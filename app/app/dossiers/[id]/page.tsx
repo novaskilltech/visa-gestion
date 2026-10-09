@@ -48,7 +48,8 @@ import {
   UploadCloud,
   Send,
   UserCheck,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from 'lucide-react';
 
 export default function CaseDetailPage() {
@@ -89,7 +90,9 @@ export default function CaseDetailPage() {
 
   // Attachment & OCR state
   const docInputRef = useRef<HTMLInputElement | null>(null);
+  const evisaInputRef = useRef<HTMLInputElement | null>(null);
   const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [isUploadingEVisa, setIsUploadingEVisa] = useState(false);
   const [uploadDocStep, setUploadDocStep] = useState('');
   const [docFeedbackMsg, setDocFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -319,6 +322,69 @@ export default function CaseDetailPage() {
     }
   };
 
+  const handleDeliverEVisa = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0] || !caseData || !session) return;
+    const file = e.target.files[0];
+    setIsUploadingEVisa(true);
+    setDocFeedbackMsg(null);
+
+    try {
+      let previewUrl = '';
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const pdfRes = await processPdfFile(file);
+        previewUrl = pdfRes.previewUrl || '';
+      } else {
+        const reader = new FileReader();
+        previewUrl = await new Promise((res) => {
+          reader.onload = () => res(reader.result as string);
+          reader.onerror = () => res('');
+          reader.readAsDataURL(file);
+        });
+      }
+
+      // Attacher le document comme VISA_FINAL
+      addDocumentToCase(
+        caseData.id,
+        {
+          type: 'VISA_FINAL',
+          file_name: file.name,
+          file_size: file.size,
+          file_url: previewUrl || '#',
+        },
+        session
+      );
+
+      // Basculer automatiquement le dossier à VISA_PRET
+      updateCaseStatus(caseData.id, 'VISA_PRET');
+      const updated = updateVisaCase(
+        caseData.id,
+        {
+          status: 'VISA_PRET',
+          visa_document_url: previewUrl || undefined,
+        },
+        session
+      );
+
+      if (updated) {
+        setCaseData(updated);
+        setDocFeedbackMsg({
+          text: `E-Visa officiel "${file.name}" délivré avec succès ! Statut mis à jour à VISA PRÊT.`,
+          type: 'success',
+        });
+        setTimeout(() => setDocFeedbackMsg(null), 5000);
+      }
+    } catch (err) {
+      console.error('Erreur délivrance e-visa:', err);
+      setDocFeedbackMsg({
+        text: 'Erreur lors du dépôt du visa officiel.',
+        type: 'error',
+      });
+    } finally {
+      setIsUploadingEVisa(false);
+      if (evisaInputRef.current) evisaInputRef.current.value = '';
+    }
+  };
+
   const handleRemoveDoc = (docId: string) => {
     if (!caseData || !session) return;
     if (confirm('Voulez-vous retirer cette pièce jointe du dossier ?')) {
@@ -434,7 +500,7 @@ export default function CaseDetailPage() {
       <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-2xs space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-100">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono font-bold text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded border border-brand-200">
                 {caseData.reference}
               </span>
@@ -442,6 +508,38 @@ export default function CaseDetailPage() {
                 <Building className="w-3.5 h-3.5 text-slate-400" />
                 {caseData.organization_name}
               </span>
+              {caseData.departure_date && (() => {
+                const dep = new Date(caseData.departure_date);
+                const diffDays = Math.ceil((dep.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                if (diffDays >= 0 && diffDays <= 3) {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse shadow-xs">
+                      <Clock className="w-3 h-3 text-rose-600" />
+                      DÉPART J-{diffDays} • URGENT
+                    </span>
+                  );
+                } else if (diffDays > 3 && diffDays <= 7) {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-xs">
+                      <Clock className="w-3 h-3 text-amber-700" />
+                      Départ J-{diffDays}
+                    </span>
+                  );
+                } else if (diffDays > 7) {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      <Calendar className="w-3 h-3 text-slate-500" />
+                      Départ dans {diffDays} j
+                    </span>
+                  );
+                } else {
+                  return (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] text-slate-400 bg-slate-50 border border-slate-200">
+                      Vol passé
+                    </span>
+                  );
+                }
+              })()}
             </div>
             <h1 className="text-2xl font-extrabold text-slate-900 mt-1">
               {caseData.traveler_last_name.toUpperCase()} {caseData.traveler_first_name}
@@ -451,8 +549,17 @@ export default function CaseDetailPage() {
             </p>
           </div>
 
-          {/* Action Buttons: Modifier, Supprimer, Télécharger */}
+          {/* Action Buttons: Modifier, Supprimer, Télécharger, Délivrer Visa */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Hidden Input pour la délivrance du E-Visa par le prestataire */}
+            <input
+              type="file"
+              ref={evisaInputRef}
+              accept="application/pdf,image/*"
+              onChange={handleDeliverEVisa}
+              className="hidden"
+            />
+
             {!isEditing && (
               <>
                 <button
@@ -476,6 +583,28 @@ export default function CaseDetailPage() {
                   <span>Supprimer</span>
                 </button>
               </>
+            )}
+
+            {/* Dépôt direct du E-Visa officiel (Prestataire consulaire ou Super Admin) */}
+            {(session.role === 'PRESTATAIRE' || session.role === 'SUPER_ADMIN') && caseData.status !== 'VISA_PRET' && (
+              <button
+                onClick={() => evisaInputRef.current?.click()}
+                disabled={isUploadingEVisa}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all hover:scale-102"
+                title="Déposer le document officiel E-Visa et finaliser le dossier"
+              >
+                {isUploadingEVisa ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Dépôt en cours...</span>
+                  </>
+                ) : (
+                  <>
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    <span>Délivrer le E-Visa (PDF)</span>
+                  </>
+                )}
+              </button>
             )}
 
             {/* Transmission au prestataire (Superadmin / Opérateur) */}
