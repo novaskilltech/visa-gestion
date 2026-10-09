@@ -16,6 +16,7 @@ import {
   transmitCaseToProvider,
   syncCasesWithCloud
 } from '@/lib/store';
+import { getFileFromIdb, storeFileInIdb } from '@/lib/idb-storage';
 import { VisaCase, UserSession, CaseStatus, CaseDocument, DocumentType, Organization } from '@/types';
 import { TransmitModal } from '@/components/TransmitModal';
 import { classifyDocumentType, parseFlightTicketText } from '@/lib/flight-parser';
@@ -119,6 +120,8 @@ export default function CaseDetailPage() {
         if (cloudFound) {
           setCaseData(cloudFound);
         }
+        setIsLoadingCase(false);
+      }).catch(() => {
         setIsLoadingCase(false);
       });
     } else {
@@ -400,14 +403,20 @@ export default function CaseDetailPage() {
     }
   };
 
-  const handleViewDoc = (doc: CaseDocument) => {
-    if (doc.file_url && (doc.file_url.startsWith('data:') || doc.file_url.startsWith('blob:') || doc.file_url.startsWith('http'))) {
+  const handleViewDoc = async (doc: CaseDocument) => {
+    let url = doc.file_url;
+    if (!url || url.startsWith('idb://') || url === '#') {
+      const fromIdb = await getFileFromIdb(doc.id);
+      if (fromIdb) url = fromIdb;
+    }
+
+    if (url && (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http'))) {
       const win = window.open();
       if (win) {
-        if (doc.file_url.startsWith('data:image')) {
-          win.document.write(`<title>${doc.file_name}</title><body style="margin:0;background:#070e1a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${doc.file_url}" style="max-width:95vw;max-height:95vh;border-radius:12px;box-shadow:0 15px 35px rgba(0,0,0,0.6);border:1px solid rgba(0,210,255,0.3);"/></body>`);
+        if (url.startsWith('data:image')) {
+          win.document.write(`<title>${doc.file_name}</title><body style="margin:0;background:#070e1a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${url}" style="max-width:95vw;max-height:95vh;border-radius:12px;box-shadow:0 15px 35px rgba(0,0,0,0.6);border:1px solid rgba(0,210,255,0.3);"/></body>`);
         } else {
-          win.location.href = doc.file_url;
+          win.location.href = url;
         }
         return;
       }
@@ -416,10 +425,16 @@ export default function CaseDetailPage() {
     handleDownloadVisa();
   };
 
-  const handleDownloadDoc = (doc: CaseDocument) => {
-    if (doc.file_url && (doc.file_url.startsWith('data:') || doc.file_url.startsWith('blob:') || doc.file_url.startsWith('http'))) {
+  const handleDownloadDoc = async (doc: CaseDocument) => {
+    let url = doc.file_url;
+    if (!url || url.startsWith('idb://') || url === '#') {
+      const fromIdb = await getFileFromIdb(doc.id);
+      if (fromIdb) url = fromIdb;
+    }
+
+    if (url && (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http'))) {
       const a = document.createElement('a');
-      a.href = doc.file_url;
+      a.href = url;
       a.download = doc.file_name;
       document.body.appendChild(a);
       a.click();
@@ -437,16 +452,16 @@ export default function CaseDetailPage() {
       [`Document certifié Visa Gestion\nNom: ${doc.file_name}\nType: ${doc.type}\nDossier: ${caseData?.reference}\nOrganisme: ${caseData?.organization_name}\nDate: ${new Date().toISOString()}`],
       { type: 'text/plain;charset=utf-8' }
     );
-    const url = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
+    a.href = blobUrl;
     a.download = doc.file_name.endsWith('.pdf') || doc.file_name.endsWith('.png') || doc.file_name.endsWith('.jpg') || doc.file_name.endsWith('.jpeg')
       ? doc.file_name
       : `${doc.file_name}.txt`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(blobUrl);
 
     setDocFeedbackMsg({
       text: `Téléchargement lancé : "${doc.file_name}"`,

@@ -29,6 +29,9 @@ const STORAGE_KEYS = {
 
 export const AVAILABLE_ACCOUNTS: AccountCredential[] = CONFIGURED_ACCOUNTS;
 
+// Cache en mémoire pour garantir la disponibilité instantanée lors des navigations
+const memoryCasesCache = new Map<string, VisaCase>();
+
 function getStored<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
   try {
@@ -44,7 +47,23 @@ function setStored<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch (e) {
-    console.error('Failed to save to localStorage:', e);
+    console.warn('LocalStorage quota or storage warning:', e);
+    // Si dépassement de quota sur la clé CASES, assainir les gros base64 data URLs
+    if (key === STORAGE_KEYS.CASES && Array.isArray(value)) {
+      try {
+        const sanitized = (value as VisaCase[]).map(c => ({
+          ...c,
+          documents: (c.documents || []).map(d => ({
+            ...d,
+            // Ne pas saturer le localStorage avec des mégas de base64 si quota dépassé
+            file_url: d.file_url && d.file_url.length > 20000 ? `idb://${d.id}` : d.file_url
+          }))
+        }));
+        localStorage.setItem(key, JSON.stringify(sanitized));
+      } catch (innerErr) {
+        console.error('Failed to store even sanitized cases:', innerErr);
+      }
+    }
   }
 }
 
@@ -230,11 +249,18 @@ export function getAllMembers(): OrganizationMember[] {
 export function getCasesForSession(session: UserSession): VisaCase[] {
   const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
   
+  // Fusionner avec la mémoire vive
+  const map = new Map<string, VisaCase>();
+  allCases.forEach(c => map.set(c.id, c));
+  memoryCasesCache.forEach((c, id) => map.set(id, c));
+  const combined: VisaCase[] = [];
+  map.forEach(c => combined.push(c));
+
   if (session.role === 'SUPER_ADMIN') {
-    return allCases;
+    return combined;
   }
   
-  return allCases.filter(c => 
+  return combined.filter(c => 
     c.organization_id === session.organization_id || 
     c.assigned_provider_id === session.organization_id
   );
@@ -253,7 +279,7 @@ export function transmitCaseToProvider(
   session?: UserSession
 ): VisaCase | null {
   const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
-  const target = allCases.find(c => c.id === caseId);
+  const target = memoryCasesCache.get(caseId) || allCases.find(c => c.id === caseId);
   if (!target) return null;
 
   if (session && session.role !== 'SUPER_ADMIN') {
@@ -274,15 +300,34 @@ export function transmitCaseToProvider(
     updated_at: new Date().toISOString(),
   };
 
+  memoryCasesCache.set(caseId, updated);
   const newCases = allCases.map(c => (c.id === caseId ? updated : c));
+  if (!newCases.some(c => c.id === caseId)) {
+    newCases.unshift(updated);
+  }
   setStored(STORAGE_KEYS.CASES, newCases);
   syncCaseToSupabase(updated); // Synchronisation instantanée Supabase
   return updated;
 }
 
 export function getCaseById(caseId: string, session: UserSession): VisaCase | null {
+  // 1. Vérifier si présent dans le cache mémoire prioritaire
+  const fromMemory = memoryCasesCache.get(caseId);
+  if (fromMemory) {
+    if (session.role === 'SUPER_ADMIN' || 
+        fromMemory.organization_id === session.organization_id || 
+        fromMemory.assigned_provider_id === session.organization_id) {
+      return fromMemory;
+    }
+  }
+
+  // 2. Vérifier dans le stockage
   const cases = getCasesForSession(session);
-  return cases.find(c => c.id === caseId) || null;
+  const found = cases.find(c => c.id === caseId) || null;
+  if (found) {
+    memoryCasesCache.set(found.id, found);
+  }
+  return found;
 }
 
 export async function fetchCaseByIdAsync(caseId: string, session: UserSession): Promise<VisaCase | null> {
@@ -301,6 +346,7 @@ export async function fetchCaseByIdAsync(caseId: string, session: UserSession): 
         c.assigned_provider_id === session.organization_id;
       
       if (hasAccess) {
+        memoryCasesCache.set(c.id, c);
         // Enregistrer localement pour les futurs accès
         const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
         if (!allCases.some(x => x.id === c.id)) {
@@ -333,6 +379,9 @@ export function createVisaCase(
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+
+  // Enregistrer immédiatement dans le cache mémoire pour garantir la navigation
+  memoryCasesCache.set(created.id, created);
 
   const updated = [created, ...allCases];
   setStored(STORAGE_KEYS.CASES, updated);

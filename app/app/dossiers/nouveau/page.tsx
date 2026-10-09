@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getCurrentSession, createVisaCase } from '@/lib/store';
-import { VisaCase, CaseDocument, DocumentType } from '@/types';
+import { storeFileInIdb } from '@/lib/idb-storage';
+import { VisaCase, CaseDocument, DocumentType, UserSession } from '@/types';
 import { parsePassportText } from '@/lib/mrz-parser';
 import { parseFlightTicketText, classifyDocumentType } from '@/lib/flight-parser';
 import { processPdfFile } from '@/lib/pdf-reader';
@@ -46,8 +47,12 @@ interface CumulativeDoc {
 
 export default function NewCasePage() {
   const router = useRouter();
-  const session = getCurrentSession();
+  const [session, setSession] = useState<UserSession | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setSession(getCurrentSession());
+  }, []);
 
   // Travel state
   const [destination, setDestination] = useState('Arabie Saoudite');
@@ -343,18 +348,26 @@ export default function NewCasePage() {
     setDocuments((prev) => prev.filter((d) => d.id !== docId));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const currentSession = session || getCurrentSession();
     if (!firstName || !lastName || !destination) {
       alert('Veuillez renseigner au moins le nom, le prénom et la destination.');
       return;
+    }
+
+    // Sauvegarder les fichiers originaux complets dans IndexedDB pour téléchargement sans quota
+    for (const doc of documents) {
+      if (doc.previewUrl) {
+        await storeFileInIdb(doc.id, doc.previewUrl);
+      }
     }
 
     // Convertir les documents cumulés en pièces jointes permanentes pour le dossier
     const caseDocs: CaseDocument[] = documents.map((doc) => ({
       id: doc.id,
       case_id: '', // généré par le store
-      organization_id: session.organization_id,
+      organization_id: currentSession.organization_id,
       type: doc.detectedType,
       file_name: doc.name,
       file_size: doc.size,
@@ -380,16 +393,18 @@ export default function NewCasePage() {
         has_separate_tickets: hasSeparateTickets,
         return_flight_pnr: hasSeparateTickets ? returnPnr : '',
         return_flight_company: hasSeparateTickets ? returnCompany : '',
-        organization_id: session.organization_id,
-        organization_name: session.organization_name,
-        created_by: session.user_id,
+        organization_id: currentSession.organization_id,
+        organization_name: currentSession.organization_name,
+        created_by: currentSession.user_id,
         documents: caseDocs,
       },
-      session
+      currentSession
     );
 
     router.push(`/app/dossiers/${createdCase.id}`);
   };
+
+  const currentOrgName = session?.organization_name || 'Omrayanair';
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto pb-16">
@@ -403,7 +418,7 @@ export default function NewCasePage() {
           <span>Retour au tableau de bord</span>
         </Link>
         <span className="text-xs text-slate-500">
-          Création de dossier pour <strong className="text-slate-800">{session.organization_name}</strong>
+          Création de dossier pour <strong className="text-slate-800">{currentOrgName}</strong>
         </span>
       </div>
 
