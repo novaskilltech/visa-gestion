@@ -133,12 +133,12 @@ export function getAllMembers(): OrganizationMember[] {
 export function getCasesForSession(session: UserSession): VisaCase[] {
   const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
   
-  // LE PRESTATAIRE (France Elite / SUPER_ADMIN) voit TOUS les dossiers de toutes les agences
-  if (session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT') {
+  // SEUL LE SUPER ADMIN (Omrayanair) voit l'ensemble des dossiers de la plateforme
+  if (session.role === 'SUPER_ADMIN') {
     return allCases;
   }
   
-  // L'AGENCE ne voit QUE ses propres dossiers
+  // Les prestataires et agences ne voient STRICTEMENT que les dossiers de leur propre organisation
   return allCases.filter(c => c.organization_id === session.organization_id);
 }
 
@@ -191,8 +191,8 @@ export function updateVisaCase(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  // Contrôle d'autorisation multi-tenant (Agence propriétaire ou Super Admin)
-  const canEdit = session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT' || target.organization_id === session.organization_id;
+  // Contrôle d'autorisation multi-tenant (Organisation propriétaire ou Super Admin Omrayanair)
+  const canEdit = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
   if (!canEdit) return null;
 
   const updated: VisaCase = {
@@ -216,7 +216,7 @@ export function deleteVisaCase(
     return { success: false, error: 'Dossier introuvable.' };
   }
 
-  // Contrôle d'autorisation multi-tenant (Agence propriétaire ou Super Admin)
+  // Contrôle d'autorisation multi-tenant (Organisation propriétaire ou Super Admin Omrayanair)
   const canDelete = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
   if (!canDelete) {
     return { success: false, error: 'Accès refusé : vous n\'avez pas les droits pour supprimer ce dossier.' };
@@ -237,7 +237,7 @@ export function addDocumentToCase(
   if (!target) return null;
 
   // Contrôle d'autorisation multi-tenant
-  const canEdit = session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT' || target.organization_id === session.organization_id;
+  const canEdit = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
   if (!canEdit) return null;
 
   const newDoc: CaseDocument = {
@@ -268,7 +268,7 @@ export function removeDocumentFromCase(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  const canEdit = session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT' || target.organization_id === session.organization_id;
+  const canEdit = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
   if (!canEdit) return null;
 
   const updated: VisaCase = {

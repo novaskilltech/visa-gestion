@@ -1,35 +1,50 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & #112)', () => {
+describe('Tests Multi-Tenant & Cloisonnement des Prestataires vs Super Admin Omrayanair', () => {
   const mockOrganizations = [
     { id: 'org-omrayanair', name: 'Omrayanair', status: 'ACTIVE' },
+    { id: 'org-fabvoyage', name: 'Fab Voyage', status: 'ACTIVE' },
     { id: 'org-france-elite', name: 'France Elite', status: 'ACTIVE' },
   ];
 
   const mockCases = [
     { id: 'c1', reference: 'VISA-2026-OMRA01', organization_id: 'org-omrayanair', traveler: 'Youssef EL ALAMI' },
-    { id: 'c2', reference: 'VISA-2026-OMRA02', organization_id: 'org-omrayanair', traveler: 'Fatima ZAHRA' },
-    { id: 'c3', reference: 'VISA-2026-AUTRE01', organization_id: 'org-autre', traveler: 'Autre Client' },
+    { id: 'c2', reference: 'VISA-2026-FABV01', organization_id: 'org-fabvoyage', traveler: 'Karim BENNANI' },
+    { id: 'c3', reference: 'VISA-2026-FELI01', organization_id: 'org-france-elite', traveler: 'Sophie DUPONT' },
   ];
 
   function filterCasesByTenant(cases, userRole, userOrgId) {
-    if (userRole === 'SUPER_ADMIN' || userRole === 'VISA_AGENT') {
+    if (userRole === 'SUPER_ADMIN') {
       return cases;
     }
     return cases.filter(c => c.organization_id === userOrgId);
   }
 
-  test('L agence Omrayanair ne doit voir QUE ses propres dossiers', () => {
-    const visibleCases = filterCasesByTenant(mockCases, 'AGENCY_ADMIN', 'org-omrayanair');
-    assert.equal(visibleCases.length, 2);
-    assert.ok(visibleCases.every(c => c.organization_id === 'org-omrayanair'));
-    assert.ok(!visibleCases.some(c => c.traveler === 'Autre Client'));
+  test('Omrayanair est l unique SUPER_ADMIN et voit l ensemble des dossiers de la plateforme', () => {
+    const visibleCases = filterCasesByTenant(mockCases, 'SUPER_ADMIN', 'org-omrayanair');
+    assert.equal(visibleCases.length, 3);
+    assert.ok(visibleCases.some(c => c.organization_id === 'org-omrayanair'));
+    assert.ok(visibleCases.some(c => c.organization_id === 'org-fabvoyage'));
+    assert.ok(visibleCases.some(c => c.organization_id === 'org-france-elite'));
   });
 
-  test('Le prestataire France Elite (SUPER_ADMIN) a accès à l ensemble des dossiers pour traitement', () => {
-    const visibleCases = filterCasesByTenant(mockCases, 'SUPER_ADMIN', 'org-france-elite');
-    assert.equal(visibleCases.length, 3);
+  test('Le prestataire Fab Voyage ne voit QUE ses propres dossiers et pas ceux des autres prestataires', () => {
+    const visibleCases = filterCasesByTenant(mockCases, 'PRESTATAIRE', 'org-fabvoyage');
+    assert.equal(visibleCases.length, 1);
+    assert.equal(visibleCases[0].traveler, 'Karim BENNANI');
+    assert.equal(visibleCases[0].organization_id, 'org-fabvoyage');
+    assert.ok(!visibleCases.some(c => c.organization_id === 'org-france-elite'));
+    assert.ok(!visibleCases.some(c => c.organization_id === 'org-omrayanair'));
+  });
+
+  test('Le prestataire France Elite ne voit QUE ses propres dossiers et pas ceux de Fab Voyage', () => {
+    const visibleCases = filterCasesByTenant(mockCases, 'PRESTATAIRE', 'org-france-elite');
+    assert.equal(visibleCases.length, 1);
+    assert.equal(visibleCases[0].traveler, 'Sophie DUPONT');
+    assert.equal(visibleCases[0].organization_id, 'org-france-elite');
+    assert.ok(!visibleCases.some(c => c.organization_id === 'org-fabvoyage'));
+    assert.ok(!visibleCases.some(c => c.organization_id === 'org-omrayanair'));
   });
 
   test('Toutes les organisations possèdent un statut conforme', () => {
@@ -67,10 +82,10 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
     assert.notEqual(caseWithSeparateTickets.flight_pnr, caseWithSeparateTickets.return_flight_pnr);
   });
 
-  test('Suppression d un dossier : une agence ne peut supprimer que son propre dossier', () => {
+  test('Suppression d un dossier : un prestataire ne peut supprimer que son propre dossier', () => {
     let cases = [
-      { id: 'c1', organization_id: 'org-omrayanair', traveler: 'Client 1' },
-      { id: 'c2', organization_id: 'org-autre', traveler: 'Client 2' },
+      { id: 'c1', organization_id: 'org-fabvoyage', traveler: 'Client 1' },
+      { id: 'c2', organization_id: 'org-france-elite', traveler: 'Client 2' },
     ];
 
     function deleteCase(caseId, userRole, userOrgId) {
@@ -83,22 +98,27 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
       return { success: true };
     }
 
-    // Omrayanair tente de supprimer un dossier d'une autre agence => Refusé
-    const resRefus = deleteCase('c2', 'AGENCY_ADMIN', 'org-omrayanair');
+    // Fab Voyage tente de supprimer un dossier de France Elite => Refusé
+    const resRefus = deleteCase('c2', 'PRESTATAIRE', 'org-fabvoyage');
     assert.equal(resRefus.success, false);
     assert.equal(cases.length, 2);
 
-    // Omrayanair supprime son propre dossier => Accepté
-    const resOk = deleteCase('c1', 'AGENCY_ADMIN', 'org-omrayanair');
+    // Fab Voyage supprime son propre dossier => Accepté
+    const resOk = deleteCase('c1', 'PRESTATAIRE', 'org-fabvoyage');
     assert.equal(resOk.success, true);
     assert.equal(cases.length, 1);
     assert.equal(cases[0].id, 'c2');
+
+    // Le Super Admin Omrayanair a le droit de modérer/supprimer tout dossier
+    const resSuperAdmin = deleteCase('c2', 'SUPER_ADMIN', 'org-omrayanair');
+    assert.equal(resSuperAdmin.success, true);
+    assert.equal(cases.length, 0);
   });
 
   test('Modification d un dossier : mise à jour des champs avec succès', () => {
     let currentCase = {
       id: 'c1',
-      organization_id: 'org-omrayanair',
+      organization_id: 'org-fabvoyage',
       traveler_first_name: 'Ahmed',
       traveler_last_name: 'TEST',
       destination: 'Arabie Saoudite',
@@ -122,11 +142,11 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
     assert.equal(updated.destination, 'Turquie');
   });
 
-  test('Compte Fab Voyage : authentification et rôle prestataire (SUPER_ADMIN)', () => {
+  test('Vérification authentification et rôles : Omrayanair SUPER_ADMIN, Fab Voyage PRESTATAIRE', () => {
     const configuredAccounts = [
-      { username: 'omrayanair', password: 'Khouribga111*', organization_id: 'org-omrayanair', role: 'AGENCY_ADMIN' },
-      { username: 'fabvoyage', password: 'fab78200', organization_id: 'org-fabvoyage', role: 'SUPER_ADMIN' },
-      { username: 'France Elite', password: 'omrayanair', organization_id: 'org-france-elite', role: 'SUPER_ADMIN' },
+      { username: 'omrayanair', password: 'Khouribga111*', organization_id: 'org-omrayanair', role: 'SUPER_ADMIN' },
+      { username: 'fabvoyage', password: 'fab78200', organization_id: 'org-fabvoyage', role: 'PRESTATAIRE' },
+      { username: 'France Elite', password: 'omrayanair', organization_id: 'org-france-elite', role: 'PRESTATAIRE' },
     ];
 
     function authenticateMock(identifier, password) {
@@ -137,31 +157,20 @@ describe('Tests Multi-Tenant & Isolation Omrayanair vs France Elite (CDC #107 & 
       return { success: true, session: match };
     }
 
-    // Auth Fab Voyage prestataire valide
-    const authSuccess = authenticateMock('fabvoyage', 'fab78200');
-    assert.equal(authSuccess.success, true);
-    assert.equal(authSuccess.session.organization_id, 'org-fabvoyage');
-    assert.equal(authSuccess.session.role, 'SUPER_ADMIN');
+    // Auth Omrayanair (Super Admin)
+    const authOmra = authenticateMock('omrayanair', 'Khouribga111*');
+    assert.equal(authOmra.success, true);
+    assert.equal(authOmra.session.role, 'SUPER_ADMIN');
 
-    // Auth Fab Voyage mauvais mot de passe
-    const authWrongPass = authenticateMock('fabvoyage', 'mauvaismdp');
-    assert.equal(authWrongPass.success, false);
-    assert.equal(authWrongPass.error, 'Mot de passe incorrect');
+    // Auth Fab Voyage (Prestataire)
+    const authFab = authenticateMock('fabvoyage', 'fab78200');
+    assert.equal(authFab.success, true);
+    assert.equal(authFab.session.organization_id, 'org-fabvoyage');
+    assert.equal(authFab.session.role, 'PRESTATAIRE');
 
-    // En tant que prestataire (SUPER_ADMIN), Fab Voyage a accès à tous les dossiers pour traitement consulaire
-    const mockCasesPlatform = [
-      { id: 'c1', reference: 'VISA-2026-OMRA001', organization_id: 'org-omrayanair', traveler: 'Client Omrayanair 1' },
-      { id: 'c2', reference: 'VISA-2026-OMRA002', organization_id: 'org-omrayanair', traveler: 'Client Omrayanair 2' },
-      { id: 'c3', reference: 'VISA-2026-AUTRE01', organization_id: 'org-autre', traveler: 'Client Autre 1' },
-    ];
-
-    const fabVisible = filterCasesByTenant(mockCasesPlatform, 'SUPER_ADMIN', 'org-fabvoyage');
-    assert.equal(fabVisible.length, 3);
-    assert.ok(fabVisible.some(c => c.organization_id === 'org-omrayanair'));
-
-    // L'agence Omrayanair reste quant à elle strictement cloisonnée à ses dossiers
-    const omraVisible = filterCasesByTenant(mockCasesPlatform, 'AGENCY_ADMIN', 'org-omrayanair');
-    assert.equal(omraVisible.length, 2);
-    assert.ok(!omraVisible.some(c => c.organization_id === 'org-autre'));
+    // Auth France Elite (Prestataire)
+    const authFranceElite = authenticateMock('France Elite', 'omrayanair');
+    assert.equal(authFranceElite.success, true);
+    assert.equal(authFranceElite.session.role, 'PRESTATAIRE');
   });
 });

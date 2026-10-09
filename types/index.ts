@@ -1,4 +1,4 @@
-export type UserRole = 'SUPER_ADMIN' | 'VISA_AGENT' | 'AGENCY_ADMIN' | 'AGENCY_USER';
+export type UserRole = 'SUPER_ADMIN' | 'PRESTATAIRE' | 'VISA_AGENT' | 'AGENCY_ADMIN' | 'AGENCY_USER';
 
 export type OrganizationStatus = 'ACTIVE' | 'SUSPENDED' | 'PENDING' | 'ARCHIVED';
 
