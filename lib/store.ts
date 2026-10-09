@@ -138,8 +138,52 @@ export function getCasesForSession(session: UserSession): VisaCase[] {
     return allCases;
   }
   
-  // Les prestataires et agences ne voient STRICTEMENT que les dossiers de leur propre organisation
-  return allCases.filter(c => c.organization_id === session.organization_id);
+  // Les prestataires voient les dossiers créés par leur organisation ET ceux qui leur ont été formellement transmis
+  return allCases.filter(c => 
+    c.organization_id === session.organization_id || 
+    c.assigned_provider_id === session.organization_id
+  );
+}
+
+export function getAvailablePrestataires(): Organization[] {
+  const orgs = getAllOrganizations();
+  // Les prestataires disponibles sont les organisations partenaires actives distinctes d'Omrayanair
+  return orgs.filter(o => o.id !== 'org-omrayanair' && o.status === 'ACTIVE');
+}
+
+export function transmitCaseToProvider(
+  caseId: string,
+  providerId: string,
+  providerName: string,
+  notes?: string,
+  session?: UserSession
+): VisaCase | null {
+  const allCases = getStored<VisaCase[]>(STORAGE_KEYS.CASES, INITIAL_CASES);
+  const target = allCases.find(c => c.id === caseId);
+  if (!target) return null;
+
+  // Seul le Super Admin (Omrayanair) peut transmettre un dossier à un prestataire
+  if (session && session.role !== 'SUPER_ADMIN') {
+    return null;
+  }
+
+  const transmitNote = notes?.trim()
+    ? `[Transmission à ${providerName} le ${new Date().toLocaleDateString('fr-FR')}]: ${notes.trim()}`
+    : `[Transmis au prestataire ${providerName} le ${new Date().toLocaleDateString('fr-FR')}]`;
+
+  const updated: VisaCase = {
+    ...target,
+    assigned_provider_id: providerId,
+    assigned_provider_name: providerName,
+    transmitted_at: new Date().toISOString(),
+    status: 'EN_TRAITEMENT', // Passage en traitement auprès du prestataire consulaire
+    notes: target.notes ? `${target.notes}\n${transmitNote}` : transmitNote,
+    updated_at: new Date().toISOString(),
+  };
+
+  const newCases = allCases.map(c => (c.id === caseId ? updated : c));
+  setStored(STORAGE_KEYS.CASES, newCases);
+  return updated;
 }
 
 export function getCaseById(caseId: string, session: UserSession): VisaCase | null {
@@ -191,8 +235,10 @@ export function updateVisaCase(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  // Contrôle d'autorisation multi-tenant (Organisation propriétaire ou Super Admin Omrayanair)
-  const canEdit = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
+  // Contrôle d'autorisation multi-tenant (Organisation propriétaire, Prestataire assigné ou Super Admin Omrayanair)
+  const canEdit = session.role === 'SUPER_ADMIN' || 
+    target.organization_id === session.organization_id ||
+    target.assigned_provider_id === session.organization_id;
   if (!canEdit) return null;
 
   const updated: VisaCase = {
@@ -237,7 +283,9 @@ export function addDocumentToCase(
   if (!target) return null;
 
   // Contrôle d'autorisation multi-tenant
-  const canEdit = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
+  const canEdit = session.role === 'SUPER_ADMIN' || 
+    target.organization_id === session.organization_id ||
+    target.assigned_provider_id === session.organization_id;
   if (!canEdit) return null;
 
   const newDoc: CaseDocument = {
@@ -268,7 +316,9 @@ export function removeDocumentFromCase(
   const target = allCases.find(c => c.id === caseId);
   if (!target) return null;
 
-  const canEdit = session.role === 'SUPER_ADMIN' || target.organization_id === session.organization_id;
+  const canEdit = session.role === 'SUPER_ADMIN' || 
+    target.organization_id === session.organization_id ||
+    target.assigned_provider_id === session.organization_id;
   if (!canEdit) return null;
 
   const updated: VisaCase = {

@@ -98,6 +98,9 @@ export interface VisaCase {
   flight_dates?: string;
   assigned_agent_id?: string;
   assigned_agent_name?: string;
+  assigned_provider_id?: string;
+  assigned_provider_name?: string;
+  transmitted_at?: string;
   visa_document_url?: string;
   notes?: string;
   created_by?: string;

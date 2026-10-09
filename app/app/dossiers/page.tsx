@@ -250,6 +250,13 @@ export default function DossiersPage() {
                     </td>
                     <td className="py-3.5 px-4">
                       {getStatusBadge(c.status)}
+                      {c.assigned_provider_name && (
+                        <div className="mt-1">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-800 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                            → {c.assigned_provider_name}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-slate-600 font-mono text-[11px]">
                       {c.departure_date || 'Non défini'}

@@ -10,9 +10,12 @@ import {
   updateVisaCase,
   deleteVisaCase,
   addDocumentToCase,
-  removeDocumentFromCase
+  removeDocumentFromCase,
+  getAvailablePrestataires,
+  transmitCaseToProvider
 } from '@/lib/store';
-import { VisaCase, UserSession, CaseStatus, CaseDocument, DocumentType } from '@/types';
+import { VisaCase, UserSession, CaseStatus, CaseDocument, DocumentType, Organization } from '@/types';
+import { TransmitModal } from '@/components/TransmitModal';
 import { classifyDocumentType, parseFlightTicketText } from '@/lib/flight-parser';
 import { parsePassportText } from '@/lib/mrz-parser';
 import { processPdfFile } from '@/lib/pdf-reader';
@@ -40,7 +43,9 @@ import {
   Plus,
   RefreshCw,
   Eye,
-  UploadCloud
+  UploadCloud,
+  Send,
+  UserCheck
 } from 'lucide-react';
 
 export default function CaseDetailPage() {
@@ -85,14 +90,30 @@ export default function CaseDetailPage() {
   const [uploadDocStep, setUploadDocStep] = useState('');
   const [docFeedbackMsg, setDocFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
+  // Transmission modal state
+  const [availablePrestataires, setAvailablePrestataires] = useState<Organization[]>([]);
+  const [isTransmitModalOpen, setIsTransmitModalOpen] = useState(false);
+  const [transmitSuccessMsg, setTransmitSuccessMsg] = useState<string | null>(null);
+
   useEffect(() => {
     const current = getCurrentSession();
     setSession(current);
     if (current && caseId) {
       const found = getCaseById(caseId, current);
       setCaseData(found);
+      setAvailablePrestataires(getAvailablePrestataires());
     }
   }, [caseId]);
+
+  const handleTransmitCase = (providerId: string, providerName: string, notes: string) => {
+    if (!caseData || !session) return;
+    const res = transmitCaseToProvider(caseData.id, providerId, providerName, notes, session);
+    if (res) {
+      setCaseData(res);
+      setTransmitSuccessMsg(`Dossier transmis avec succès au prestataire ${providerName}.`);
+      setTimeout(() => setTransmitSuccessMsg(null), 5000);
+    }
+  };
 
   if (!session) return null;
 
@@ -430,6 +451,28 @@ export default function CaseDetailPage() {
               </>
             )}
 
+            {/* Transmission au prestataire (Superadmin / Opérateur) */}
+            {(session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT') && (
+              <button
+                onClick={() => setIsTransmitModalOpen(true)}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+                  caseData.assigned_provider_name
+                    ? 'bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300'
+                    : caseData.status === 'PRET_A_TRANSMETTRE'
+                    ? 'bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white shadow-brand-600/30 animate-pulse'
+                    : 'bg-slate-900 hover:bg-slate-800 text-white shadow-slate-900/20'
+                }`}
+                title="Transmettre le dossier à un prestataire consulaire"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>
+                  {caseData.assigned_provider_name 
+                    ? `Transmis à ${caseData.assigned_provider_name}` 
+                    : 'Transmettre au prestataire'}
+                </span>
+              </button>
+            )}
+
             {caseData.status === 'VISA_PRET' && (
               <button
                 onClick={handleDownloadVisa}
@@ -441,6 +484,46 @@ export default function CaseDetailPage() {
             )}
           </div>
         </div>
+
+        {/* Transmission Feedback */}
+        {transmitSuccessMsg && (
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-800 font-semibold flex items-center justify-between gap-2 animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0" />
+              <span>{transmitSuccessMsg}</span>
+            </div>
+            <span className="text-[10px] text-sky-600 font-mono">Cloisonné multi-tenant</span>
+          </div>
+        )}
+
+        {/* Assigned Provider Status Banner */}
+        {caseData.assigned_provider_name && (
+          <div className="p-3.5 bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-sky-600 text-white flex items-center justify-center font-bold">
+                <Send className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-900">
+                  Dossier assigné au prestataire : <span className="text-sky-700">{caseData.assigned_provider_name}</span>
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {caseData.transmitted_at 
+                    ? `Transmis le ${new Date(caseData.transmitted_at).toLocaleDateString('fr-FR')} à ${new Date(caseData.transmitted_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+                    : 'Transmission active'}
+                </p>
+              </div>
+            </div>
+            {(session.role === 'SUPER_ADMIN' || session.role === 'VISA_AGENT') && (
+              <button
+                onClick={() => setIsTransmitModalOpen(true)}
+                className="text-xs font-bold text-sky-700 hover:text-sky-900 underline"
+              >
+                Changer de prestataire
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Notifications Feedback */}
         {saveSuccess && (
@@ -1125,6 +1208,20 @@ export default function CaseDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de transmission consulaire */}
+      {caseData && (
+        <TransmitModal
+          isOpen={isTransmitModalOpen}
+          onClose={() => setIsTransmitModalOpen(false)}
+          onTransmit={handleTransmitCase}
+          providers={availablePrestataires}
+          caseReference={caseData.reference}
+          travelerName={`${caseData.traveler_last_name.toUpperCase()} ${caseData.traveler_first_name}`}
+          currentProviderId={caseData.assigned_provider_id}
+          documentsCount={caseData.documents?.length || 0}
+        />
       )}
     </div>
   );
