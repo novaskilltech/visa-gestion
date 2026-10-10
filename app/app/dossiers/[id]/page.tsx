@@ -1512,7 +1512,7 @@ export default function CaseDetailPage() {
                   <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
                   <p className="text-xs font-semibold text-slate-600">Chargement du document haute définition...</p>
                 </div>
-              ) : previewDocModal.url ? (
+              ) : previewDocModal.url && previewDocModal.url !== '#' ? (
                 previewDocModal.url.startsWith('data:application/pdf') || previewDocModal.docName.toLowerCase().endsWith('.pdf') ? (
                   <iframe
                     src={previewDocModal.url}
@@ -1525,14 +1525,20 @@ export default function CaseDetailPage() {
                     src={previewDocModal.url}
                     alt={previewDocModal.docName}
                     className="max-w-full max-h-[72vh] object-contain rounded-xl border border-slate-300 shadow-md bg-white"
+                    onError={(e) => {
+                      // Si l'URL data: ou blob est corrompue, afficher un fallback élégant
+                      (e.target as HTMLElement).style.display = 'none';
+                      const fallbackEl = document.getElementById('preview-doc-fallback');
+                      if (fallbackEl) fallbackEl.style.display = 'block';
+                    }}
                   />
                 )
               ) : (
                 <div className="text-center space-y-3 py-12 max-w-sm mx-auto">
                   <AlertCircle className="w-10 h-10 text-amber-500 mx-auto" />
-                  <h4 className="text-sm font-bold text-slate-800">Document certifié Visa Gestion</h4>
+                  <h4 className="text-sm font-bold text-slate-800">Pièce jointe du dossier consulaire</h4>
                   <p className="text-xs text-slate-500">
-                    Le fichier a été enregistré sur le dossier ({caseData.reference}). Vous pouvez télécharger la version certifiée directement.
+                    Document : <strong className="text-slate-800 font-mono">{previewDocModal.docName}</strong> enregistré sur le dossier ({caseData.reference}).
                   </p>
                   <button
                     type="button"
@@ -1547,6 +1553,25 @@ export default function CaseDetailPage() {
                   </button>
                 </div>
               )}
+
+              <div id="preview-doc-fallback" style={{ display: 'none' }} className="text-center space-y-3 py-12 max-w-sm mx-auto">
+                <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
+                <h4 className="text-sm font-bold text-slate-800">Aperçu direct non disponible</h4>
+                <p className="text-xs text-slate-500">
+                  Le format spécifique de ce fichier ne peut être rendu directement dans le navigateur. Vous pouvez le télécharger directement.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const doc = caseData.documents?.find(d => d.file_name === previewDocModal.docName);
+                    if (doc) handleDownloadDoc(doc);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-brand-600 text-white font-semibold text-xs inline-flex items-center gap-2 hover:bg-brand-700 shadow-sm"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Télécharger "{previewDocModal.docName}"</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
