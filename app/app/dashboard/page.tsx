@@ -9,6 +9,7 @@ import {
   syncCasesWithCloud
 } from '@/lib/store';
 import { VisaCase, UserSession } from '@/types';
+import { AddAgencyModal } from '@/components/AddAgencyModal';
 import { 
   PlusCircle, 
   Clock, 
@@ -25,13 +26,17 @@ import {
   ShieldCheck,
   Bot,
   Zap,
-  Activity
+  Activity,
+  Building,
+  Plus
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [cases, setCases] = useState<VisaCase[]>([]);
   const [search, setSearch] = useState('');
+  const [isAddAgencyOpen, setIsAddAgencyOpen] = useState(false);
+  const [agencySuccessMsg, setAgencySuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const current = getCurrentSession();
@@ -121,7 +126,18 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 relative z-10">
+        <div className="flex items-center gap-3 relative z-10 flex-wrap">
+          {session.role === 'SUPER_ADMIN' && (
+            <button
+              type="button"
+              onClick={() => setIsAddAgencyOpen(true)}
+              className="inline-flex items-center gap-2 py-2.5 px-4 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold text-xs transition-all hover:scale-102 shadow-2xs"
+            >
+              <Building className="w-4 h-4 text-purple-600" />
+              <span>Ajouter une agence (Login)</span>
+            </button>
+          )}
+
           <Link
             href="/app/dossiers/nouveau"
             className="inline-flex items-center gap-2 py-2.5 px-5 rounded-xl bg-gradient-to-r from-brand-600 to-sky-600 hover:from-brand-700 hover:to-sky-700 text-white font-bold text-xs shadow-md shadow-sky-600/25 hover:shadow-sky-600/35 transition-all hover:scale-102"
@@ -131,6 +147,13 @@ export default function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {agencySuccessMsg && (
+        <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold flex items-center gap-2 animate-in fade-in shadow-2xs">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{agencySuccessMsg}</span>
+        </div>
+      )}
 
       {/* BENTO GRID KPI AERO-TECH (CDC #134) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -346,6 +369,19 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* MODAL D'AJOUT D'AGENCE DIRECTEMENT DEPUIS LE DASHBOARD */}
+      {session && session.role === 'SUPER_ADMIN' && (
+        <AddAgencyModal
+          isOpen={isAddAgencyOpen}
+          onClose={() => setIsAddAgencyOpen(false)}
+          session={session}
+          onCreated={(newOrg) => {
+            setAgencySuccessMsg(`Agence "${newOrg.name}" créée avec succès avec ses accès de connexion.`);
+            setTimeout(() => setAgencySuccessMsg(null), 5000);
+          }}
+        />
+      )}
     </div>
   );
 }

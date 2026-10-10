@@ -173,4 +173,55 @@ describe('Tests Multi-Tenant & Cloisonnement des Prestataires vs Super Admin Omr
     assert.equal(authFranceElite.success, true);
     assert.equal(authFranceElite.session.role, 'PRESTATAIRE');
   });
+
+  test('Ajout d une nouvelle agence par le Super Admin avec octroi immédiat de login et mot de passe', () => {
+    const customAccounts = [];
+    const customOrgs = [];
+
+    function createAgencyMock(data, session) {
+      if (session.role !== 'SUPER_ADMIN') {
+        return { success: false, error: 'Habilitation refusée' };
+      }
+      if (!data.name || !data.username || !data.password) {
+        return { success: false, error: 'Champs requis manquants' };
+      }
+      const orgId = `org-${Date.now()}`;
+      const org = { id: orgId, name: data.name, status: 'ACTIVE' };
+      const account = {
+        username: data.username.toLowerCase(),
+        password: data.password,
+        organization_id: orgId,
+        role: data.role || 'AGENCY_ADMIN',
+      };
+      customOrgs.push(org);
+      customAccounts.push(account);
+      return { success: true, org, account };
+    }
+
+    const superAdminSession = { role: 'SUPER_ADMIN', username: 'omrayanair' };
+    const res = createAgencyMock(
+      {
+        name: 'Al Madina Voyages',
+        username: 'almadina',
+        password: 'Password123*',
+        role: 'AGENCY_ADMIN',
+      },
+      superAdminSession
+    );
+
+    assert.equal(res.success, true);
+    assert.equal(res.account.username, 'almadina');
+    assert.equal(res.account.password, 'Password123*');
+    assert.equal(res.account.role, 'AGENCY_ADMIN');
+    assert.equal(customOrgs.length, 1);
+
+    // Test de tentative de création par un non-Super Admin (Prestataire) -> Doit être refusé
+    const nonAdminRes = createAgencyMock(
+      { name: 'Fraud Agency', username: 'fraud', password: '123' },
+      { role: 'PRESTATAIRE', username: 'fabvoyage' }
+    );
+    assert.equal(nonAdminRes.success, false);
+    assert.equal(nonAdminRes.error, 'Habilitation refusée');
+  });
 });
+

@@ -7,9 +7,11 @@ import {
   getAllOrganizations, 
   updateOrganizationStatus, 
   getAllMembers,
-  getCasesForSession
+  getCasesForSession,
+  getAvailableAccounts
 } from '@/lib/store';
-import { Organization, UserSession, OrganizationMember, VisaCase } from '@/types';
+import { Organization, UserSession, OrganizationMember, VisaCase, AccountCredential } from '@/types';
+import { AddAgencyModal } from '@/components/AddAgencyModal';
 import { 
   Building, 
   ShieldCheck, 
@@ -19,7 +21,9 @@ import {
   Plus, 
   ArrowLeft,
   Search,
-  ExternalLink
+  ExternalLink,
+  KeyRound,
+  Lock
 } from 'lucide-react';
 
 export default function AdminAgenciesPage() {
@@ -27,8 +31,10 @@ export default function AdminAgenciesPage() {
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [members, setMembers] = useState<OrganizationMember[]>([]);
   const [cases, setCases] = useState<VisaCase[]>([]);
+  const [accounts, setAccounts] = useState<AccountCredential[]>([]);
   const [search, setSearch] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   useEffect(() => {
     const current = getCurrentSession();
@@ -37,6 +43,7 @@ export default function AdminAgenciesPage() {
       setOrganizations(getAllOrganizations());
       setMembers(getAllMembers());
       setCases(getCasesForSession(current));
+      setAccounts(getAvailableAccounts());
     }
   }, []);
 
@@ -79,19 +86,30 @@ export default function AdminAgenciesPage() {
             Gestion des Agences Clientes (Tenants)
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Administration des comptes B2B, habilitations et statuts d&apos;activité.
+            Administration des comptes B2B, habilitations et attribution des identifiants d&apos;accès.
           </p>
         </div>
 
-        <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Rechercher agence..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-slate-200 text-xs focus:ring-2 focus:ring-brand-500 text-slate-900"
-          />
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-60">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Rechercher agence..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-brand-500 text-slate-900"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="inline-flex items-center gap-1.5 py-2 px-4 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md shadow-brand-600/30 transition-all shrink-0 hover:scale-102"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Ajouter une agence</span>
+          </button>
         </div>
       </div>
 
@@ -109,8 +127,8 @@ export default function AdminAgenciesPage() {
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px]">
               <tr>
                 <th className="py-3 px-4">Agence / Nom légal</th>
-                <th className="py-3 px-4">Administrateur</th>
-                <th className="py-3 px-4">Utilisateurs</th>
+                <th className="py-3 px-4">Identifiant (Login)</th>
+                <th className="py-3 px-4">Contact / Email</th>
                 <th className="py-3 px-4">Dossiers en cours</th>
                 <th className="py-3 px-4">Dossiers terminés</th>
                 <th className="py-3 px-4">Statut</th>
@@ -121,6 +139,7 @@ export default function AdminAgenciesPage() {
               {filteredOrgs.map((org) => {
                 const orgMembers = members.filter(m => m.organization_id === org.id);
                 const adminUser = orgMembers.find(m => m.role === 'AGENCY_ADMIN' || m.role === 'SUPER_ADMIN') || orgMembers[0];
+                const orgAccount = accounts.find(a => a.organization_id === org.id);
                 const orgCases = cases.filter(c => c.organization_id === org.id);
                 const casesEnCours = orgCases.filter(c => c.status !== 'TERMINE').length;
                 const casesTermines = orgCases.filter(c => c.status === 'TERMINE').length;
@@ -130,6 +149,16 @@ export default function AdminAgenciesPage() {
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-slate-900 block text-sm">{org.name}</span>
                       <span className="text-[10px] text-slate-400 font-mono">{org.legal_name || org.name} • {org.country}</span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      {orgAccount ? (
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-50 text-purple-800 border border-purple-200 font-mono text-xs font-bold">
+                          <KeyRound className="w-3 h-3 text-purple-600" />
+                          <span>{orgAccount.username}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 font-mono text-[11px] italic">Non configuré</span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       {adminUser ? (
@@ -184,6 +213,22 @@ export default function AdminAgenciesPage() {
           </table>
         </div>
       </div>
+
+      {/* MODAL D'AJOUT D'AGENCE / PRESTATAIRE AVEC LOGIN ET MOT DE PASSE */}
+      {session && (
+        <AddAgencyModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          session={session}
+          onCreated={(newOrg) => {
+            setOrganizations(getAllOrganizations());
+            setMembers(getAllMembers());
+            setAccounts(getAvailableAccounts());
+            setFeedback(`Nouvelle structure "${newOrg.name}" enregistrée avec succès avec son compte d'accès.`);
+            setTimeout(() => setFeedback(null), 4000);
+          }}
+        />
+      )}
     </div>
   );
 }

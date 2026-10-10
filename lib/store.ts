@@ -25,7 +25,20 @@ const STORAGE_KEYS = {
   MEMBERS: 'visa_gestion_v3_members',
   SESSION: 'visa_gestion_v3_session',
   DEMOS: 'visa_gestion_v3_demos',
+  ACCOUNTS: 'visa_gestion_v3_accounts',
 };
+
+export function getAvailableAccounts(): AccountCredential[] {
+  const customAccounts = getStored<AccountCredential[]>(STORAGE_KEYS.ACCOUNTS, []);
+  const allMap = new Map<string, AccountCredential>();
+  // 1. Comptes natifs configurés
+  CONFIGURED_ACCOUNTS.forEach(a => allMap.set(a.user_id, a));
+  // 2. Comptes d'agences ajoutés dynamiquement
+  customAccounts.forEach(a => allMap.set(a.user_id, a));
+  const list: AccountCredential[] = [];
+  allMap.forEach(a => list.push(a));
+  return list;
+}
 
 export const AVAILABLE_ACCOUNTS: AccountCredential[] = CONFIGURED_ACCOUNTS;
 
@@ -157,13 +170,14 @@ export async function syncCasesWithCloud(): Promise<VisaCase[]> {
 // SESSIONS & ORGANISATIONS
 // -------------------------------------------------------------
 export function getCurrentSession(): UserSession {
+  const allAccounts = getAvailableAccounts();
   const session = getStored<UserSession | null>(STORAGE_KEYS.SESSION, null);
-  if (!session || !AVAILABLE_ACCOUNTS.some(a => a.organization_id === session.organization_id)) {
-    const defaultAccount = AVAILABLE_ACCOUNTS[0]; // Omrayanair
+  if (!session || !allAccounts.some(a => a.organization_id === session.organization_id)) {
+    const defaultAccount = allAccounts[0] || CONFIGURED_ACCOUNTS[0]; // Omrayanair
     setCurrentSession(defaultAccount);
     return defaultAccount;
   }
-  const matchingConfigured = AVAILABLE_ACCOUNTS.find(a => a.user_id === session.user_id);
+  const matchingConfigured = allAccounts.find(a => a.user_id === session.user_id);
   if (matchingConfigured && (matchingConfigured.role !== session.role || matchingConfigured.name !== session.name)) {
     const updatedSession = { ...session, role: matchingConfigured.role, name: matchingConfigured.name };
     setCurrentSession(updatedSession);
@@ -179,8 +193,9 @@ export function setCurrentSession(session: UserSession): void {
 export function authenticate(identifier: string, password: string): { success: boolean; session?: UserSession; error?: string } {
   const cleanId = identifier.trim().toLowerCase();
   const cleanPass = password.trim();
+  const allAccounts = getAvailableAccounts();
 
-  for (const account of AVAILABLE_ACCOUNTS) {
+  for (const account of allAccounts) {
     const matchUser = 
       account.username.toLowerCase() === cleanId ||
       account.email.toLowerCase() === cleanId ||
@@ -241,6 +256,105 @@ export function getAllMembers(): OrganizationMember[] {
     return merged;
   }
   return updated;
+}
+
+export function createOrganizationWithAccount(
+  data: {
+    name: string;
+    legal_name?: string;
+    email: string;
+    phone?: string;
+    country: string;
+    address?: string;
+    role: 'PRESTATAIRE' | 'AGENCY_ADMIN' | 'VISA_AGENT';
+    username: string;
+    password: string;
+  },
+  session: UserSession
+): { success: boolean; organization?: Organization; account?: AccountCredential; error?: string } {
+  // Contrôle RBAC : Seul le SUPER_ADMIN peut créer de nouvelles agences/prestataires
+  if (session.role !== 'SUPER_ADMIN') {
+    return { success: false, error: 'Habilitation insuffisante : seul le Super Admin peut créer une agence.' };
+  }
+
+  const cleanUsername = data.username.trim().toLowerCase();
+  const cleanPass = data.password.trim();
+
+  if (!data.name.trim()) {
+    return { success: false, error: 'Le nom de l\'agence est obligatoire.' };
+  }
+  if (!cleanUsername) {
+    return { success: false, error: 'Le login d\'accès est obligatoire.' };
+  }
+  if (!cleanPass || cleanPass.length < 4) {
+    return { success: false, error: 'Le mot de passe doit comporter au moins 4 caractères.' };
+  }
+
+  // Vérifier l'unicité de l'identifiant
+  const allAccounts = getAvailableAccounts();
+  const alreadyExists = allAccounts.some(
+    a => a.username.toLowerCase() === cleanUsername || (a.email && a.email.toLowerCase() === data.email.trim().toLowerCase())
+  );
+  if (alreadyExists) {
+    return { success: false, error: `L'identifiant "${cleanUsername}" ou cet email est déjà utilisé.` };
+  }
+
+  const orgId = `org-${Date.now()}`;
+  const userId = `user-${Date.now()}`;
+  const now = new Date().toISOString();
+
+  const newOrg: Organization = {
+    id: orgId,
+    name: data.name.trim(),
+    legal_name: data.legal_name?.trim() || data.name.trim(),
+    email: data.email.trim(),
+    phone: data.phone?.trim() || '',
+    country: data.country.trim() || 'France',
+    address: data.address?.trim() || '',
+    status: 'ACTIVE',
+    created_at: now,
+    updated_at: now,
+  };
+
+  const newMember: OrganizationMember = {
+    id: `mem-${Date.now()}`,
+    organization_id: orgId,
+    user_id: userId,
+    name: `${data.name.trim()} (${data.role === 'PRESTATAIRE' ? 'Prestataire' : 'Agence'})`,
+    email: data.email.trim(),
+    role: data.role,
+    active: true,
+    created_at: now,
+  };
+
+  const newAccount: AccountCredential = {
+    user_id: userId,
+    username: cleanUsername,
+    email: data.email.trim(),
+    name: `${data.name.trim()}`,
+    role: data.role,
+    organization_id: orgId,
+    organization_name: data.name.trim(),
+    password: cleanPass,
+  };
+
+  // 1. Sauvegarder l'organisation
+  const orgs = getAllOrganizations();
+  setStored(STORAGE_KEYS.ORGS, [newOrg, ...orgs]);
+
+  // 2. Sauvegarder le membre
+  const members = getAllMembers();
+  setStored(STORAGE_KEYS.MEMBERS, [newMember, ...members]);
+
+  // 3. Sauvegarder les identifiants
+  const customAccounts = getStored<AccountCredential[]>(STORAGE_KEYS.ACCOUNTS, []);
+  setStored(STORAGE_KEYS.ACCOUNTS, [newAccount, ...customAccounts]);
+
+  return {
+    success: true,
+    organization: newOrg,
+    account: newAccount,
+  };
 }
 
 // -------------------------------------------------------------
