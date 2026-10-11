@@ -26,13 +26,13 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function storeFileInIdb(id: string, fileDataUrl: string): Promise<void> {
+export async function storeFileInIdb(id: string, fileDataUrl: string, fileName?: string): Promise<void> {
   try {
     const db = await openDatabase();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const req = store.put({ id, fileDataUrl, updated_at: Date.now() });
+      const req = store.put({ id, fileDataUrl, fileName, updated_at: Date.now() });
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
@@ -59,6 +59,33 @@ export async function getFileFromIdb(id: string): Promise<string | null> {
     });
   } catch (err) {
     console.warn('Erreur lecture IndexedDB:', err);
+    return null;
+  }
+}
+
+export async function findFileInIdbByName(fileName: string): Promise<string | null> {
+  try {
+    const db = await openDatabase();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.openCursor();
+      req.onsuccess = (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cursor = (event.target as any).result;
+        if (cursor) {
+          if (cursor.value && cursor.value.fileName === fileName && cursor.value.fileDataUrl) {
+            resolve(cursor.value.fileDataUrl);
+            return;
+          }
+          cursor.continue();
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
     return null;
   }
 }

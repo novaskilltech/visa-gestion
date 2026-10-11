@@ -16,7 +16,7 @@ import {
   transmitCaseToProvider,
   syncCasesWithCloud
 } from '@/lib/store';
-import { getFileFromIdb, storeFileInIdb } from '@/lib/idb-storage';
+import { getFileFromIdb, storeFileInIdb, findFileInIdbByName } from '@/lib/idb-storage';
 import { VisaCase, UserSession, CaseStatus, CaseDocument, DocumentType, Organization } from '@/types';
 import { TransmitModal } from '@/components/TransmitModal';
 import { classifyDocumentType, parseFlightTicketText } from '@/lib/flight-parser';
@@ -323,7 +323,7 @@ export default function CaseDetailPage() {
       if (updated && updated.documents && updated.documents.length > 0) {
         const addedDoc = updated.documents[updated.documents.length - 1];
         if (addedDoc && previewUrl) {
-          await storeFileInIdb(addedDoc.id, previewUrl);
+          await storeFileInIdb(addedDoc.id, previewUrl, file.name);
         }
       }
 
@@ -383,7 +383,7 @@ export default function CaseDetailPage() {
       if (updatedCase && updatedCase.documents && updatedCase.documents.length > 0) {
         const addedDoc = updatedCase.documents[updatedCase.documents.length - 1];
         if (addedDoc && previewUrl) {
-          await storeFileInIdb(addedDoc.id, previewUrl);
+          await storeFileInIdb(addedDoc.id, previewUrl, file.name);
         }
       }
 
@@ -445,7 +445,13 @@ export default function CaseDetailPage() {
     let url = doc.file_url;
     if (!url || url.startsWith('idb://') || url === '#') {
       const fromIdb = await getFileFromIdb(doc.id);
-      if (fromIdb) url = fromIdb;
+      if (fromIdb) {
+        url = fromIdb;
+      } else {
+        // Recherche de secours par nom de fichier dans le store
+        const fromName = await findFileInIdbByName(doc.file_name);
+        if (fromName) url = fromName;
+      }
     }
 
     setPreviewDocModal({
@@ -461,7 +467,12 @@ export default function CaseDetailPage() {
     let url = doc.file_url;
     if (!url || url.startsWith('idb://') || url === '#') {
       const fromIdb = await getFileFromIdb(doc.id);
-      if (fromIdb) url = fromIdb;
+      if (fromIdb) {
+        url = fromIdb;
+      } else {
+        const fromName = await findFileInIdbByName(doc.file_name);
+        if (fromName) url = fromName;
+      }
     }
 
     if (url && (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http'))) {

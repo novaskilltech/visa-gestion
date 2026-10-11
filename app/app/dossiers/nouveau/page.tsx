@@ -359,7 +359,7 @@ export default function NewCasePage() {
     // Sauvegarder les fichiers originaux complets dans IndexedDB pour téléchargement sans quota
     for (const doc of documents) {
       if (doc.previewUrl) {
-        await storeFileInIdb(doc.id, doc.previewUrl);
+        await storeFileInIdb(doc.id, doc.previewUrl, doc.name);
       }
     }
 
