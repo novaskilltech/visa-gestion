@@ -78,21 +78,26 @@ export async function getFileFromIdb(id: string): Promise<string | null> {
 
 export async function findFileInIdbByName(fileName: string): Promise<string | null> {
   const cleanTarget = (fileName || '').toLowerCase().trim();
+  if (!cleanTarget) return null;
+
+  // 1. Recherche par nom exact dans le cache mémoire
   if (memoryFileCache.has(cleanTarget)) {
     return memoryFileCache.get(cleanTarget)!.fileDataUrl;
   }
-  // Recherche mémoire approximative
+
+  // 2. Recherche par correspondance exacte de fileName dans le cache mémoire
   const entries = Array.from(memoryFileCache.entries());
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
-    if (entry) {
-      const [key, val] = entry;
-      if (key.includes(cleanTarget) || cleanTarget.includes(key) || (val.fileName && val.fileName.toLowerCase().includes(cleanTarget))) {
-        return val.fileDataUrl;
+    if (entry && entry[1].fileName) {
+      const entryName = entry[1].fileName.toLowerCase().trim();
+      if (entryName === cleanTarget) {
+        return entry[1].fileDataUrl;
       }
     }
   }
 
+  // 3. Recherche dans IndexedDB par nom EXACT
   try {
     const db = await openDatabase();
     return new Promise((resolve) => {
@@ -104,9 +109,9 @@ export async function findFileInIdbByName(fileName: string): Promise<string | nu
         const cursor = (event.target as any).result;
         if (cursor) {
           const item = cursor.value;
-          if (item && item.fileDataUrl) {
-            const currentName = (item.fileName || '').toLowerCase().trim();
-            if (currentName === cleanTarget || currentName.includes(cleanTarget) || cleanTarget.includes(currentName)) {
+          if (item && item.fileDataUrl && item.fileName) {
+            const currentName = item.fileName.toLowerCase().trim();
+            if (currentName === cleanTarget) {
               memoryFileCache.set(cleanTarget, { fileDataUrl: item.fileDataUrl, fileName: item.fileName });
               resolve(item.fileDataUrl);
               return;
