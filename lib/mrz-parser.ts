@@ -86,19 +86,19 @@ const COUNTRY_CODES: Record<string, string> = {
 
 // Mots-clés de nationalités textuels (OCR)
 const NATIONALITY_TEXT_MAP: { match: RegExp; label: string }[] = [
-  { match: /\b(FRANCAISE|FRANÇAISE|FRENCH|FRANCE)\b/i, label: 'Française' },
-  { match: /\b(MAROCAINE|MOROCCAN|MAROC|MOROCCO)\b/i, label: 'Marocaine' },
-  { match: /\b(ALGERIENNE|ALGÉRIENNE|ALGERIAN|ALGERIE|ALGÉRIE)\b/i, label: 'Algérienne' },
-  { match: /\b(TUNISIENNE|TUNISIAN|TUNISIE)\b/i, label: 'Tunisienne' },
-  { match: /\b(SENEGALAISE|SÉNÉGALAISE|SENEGALESE|SENEGAL|SÉNÉGAL)\b/i, label: 'Sénégalaise' },
+  { match: /\b(FRANCAISE|FRANÇAISE|FRENCH|R[ÉE]PUBLIQUE\s*FRAN[ÇC]AISE|FRANCE)\b/i, label: 'Française' },
+  { match: /\b(MAROCAINE|MOROCCAN|ROYAUME\s*DU\s*MAROC|KINGDOM\s*OF\s*MOROCCO|MAROC|MOROCCO)\b/i, label: 'Marocaine' },
+  { match: /\b(ALGERIENNE|ALGÉRIENNE|ALGERIAN|R[ÉE]PUBLIQUE\s*ALG[ÉE]RIENNE|ALGERIE|ALGÉRIE)\b/i, label: 'Algérienne' },
+  { match: /\b(TUNISIENNE|TUNISIAN|R[ÉE]PUBLIQUE\s*TUNISIENNE|TUNISIE)\b/i, label: 'Tunisienne' },
+  { match: /\b(SENEGALAISE|SÉNÉGALAISE|SENEGALESE|R[ÉE]PUBLIQUE\s*DU\s*S[ÉE]N[ÉE]GAL|SENEGAL|SÉNÉGAL)\b/i, label: 'Sénégalaise' },
   { match: /\b(IVOIRIENNE|IVORIAN|COTE D['’]IVOIRE|CÔTE D['’]IVOIRE)\b/i, label: 'Ivoirienne' },
-  { match: /\b(MALIENNE|MALIAN|MALI)\b/i, label: 'Malienne' },
+  { match: /\b(MALIENNE|MALIAN|R[ÉE]PUBLIQUE\s*DU\s*MALI|MALI)\b/i, label: 'Malienne' },
   { match: /\b(GUINEENNE|GUINÉENNE|GUINEAN|GUINEE|GUINÉE)\b/i, label: 'Guinéenne' },
   { match: /\b(CAMEROUNAISE|CAMEROONIAN|CAMEROUN)\b/i, label: 'Camerounaise' },
   { match: /\b(COMORIENNE|COMORIAN|COMORES)\b/i, label: 'Comorienne' },
   { match: /\b(MAURITANIENNE|MAURITANIAN|MAURITANIE)\b/i, label: 'Mauritanienne' },
-  { match: /\b(SAOUDIENNE|SAUDI)\b/i, label: 'Saoudienne' },
-  { match: /\b(TURQUE|TURKISH|TURQUIE)\b/i, label: 'Turque' },
+  { match: /\b(SAOUDIENNE|SAUDI|SAUDI\s*ARABIA|ARABIE\s*SAOUDITE|KINGDOM\s*OF\s*SAUDI\s*ARABIA)\b/i, label: 'Saoudienne' },
+  { match: /\b(TURQUE|TURKISH|TURKEY|T[ÜU]RKIYE|TURQUIE)\b/i, label: 'Turque' },
   { match: /\b(EGYPTIENNE|ÉGYPTIENNE|EGYPTIAN|EGYPTE|ÉGYPTE)\b/i, label: 'Égyptienne' },
   { match: /\b(LIBANAISE|LEBANESE|LIBAN)\b/i, label: 'Libanaise' },
   { match: /\b(SYRIENNE|SYRIAN|SYRIE)\b/i, label: 'Syrienne' },
@@ -186,7 +186,7 @@ export function parsePassportText(text: string): ParsedPassportData {
             lastName,
             firstName,
             passportNumber: passportNum,
-            nationality: nationality || 'Française',
+            nationality: nationality || '',
             birthDate,
             expiryDate,
             confidence: (lastName && firstName && passportNum) ? 0.98 : 0.85,
@@ -249,10 +249,6 @@ export function parsePassportText(text: string): ParsedPassportData {
         break;
       }
     }
-  }
-
-  if (!detectedNat) {
-    detectedNat = 'Française';
   }
 
   // Recherche Dates (JJ/MM/AAAA ou JJ.MM.AAAA)

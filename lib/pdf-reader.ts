@@ -119,7 +119,21 @@ export async function processPdfFile(file: File): Promise<PdfProcessingResult> {
     console.warn('Erreur rendu canvas PDF:', renderErr);
   }
 
-  const fileDataUrl = await fileDataUrlPromise;
+  let fileDataUrl = await fileDataUrlPromise;
+  if (!fileDataUrl && typeof window !== 'undefined') {
+    // Secours si fileDataUrlPromise est vide : conversion directe arrayBuffer -> base64
+    try {
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = '';
+      const len = bytes.byteLength;
+      for (let b = 0; b < len; b++) {
+        binary += String.fromCharCode(bytes[b]);
+      }
+      fileDataUrl = `data:application/pdf;base64,${btoa(binary)}`;
+    } catch {
+      fileDataUrl = previewUrl || '';
+    }
+  }
 
   return {
     text: fullText.trim(),

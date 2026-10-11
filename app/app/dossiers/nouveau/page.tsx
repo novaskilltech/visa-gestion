@@ -240,8 +240,16 @@ export default function NewCasePage() {
             });
           }
 
-          if (parsedFlight.airline) {
-            setCompany((currentComp) => currentComp || parsedFlight.airline);
+          if (parsedFlight.airline || parsedFlight.flightNumber) {
+            setCompany((currentComp) => {
+              if (currentComp) return currentComp;
+              const parts = [];
+              if (parsedFlight.airline) parts.push(parsedFlight.airline);
+              if (parsedFlight.flightNumber && !parts.some(p => p.includes(parsedFlight.flightNumber))) {
+                parts.push(parsedFlight.flightNumber);
+              }
+              return parts.join(' ');
+            });
           }
 
           // Dates et destination
@@ -288,9 +296,19 @@ export default function NewCasePage() {
               previewUrl: previewDataUrl,
               summary: [`Données extraites : ${maybePassport.lastName || maybePassport.passportNumber}`],
             });
-          } else if (maybeFlight.pnr || maybeFlight.airline || maybeFlight.departureDate) {
+          } else if (maybeFlight.pnr || maybeFlight.airline || maybeFlight.flightNumber || maybeFlight.departureDate) {
             if (maybeFlight.pnr) setPnr((prev) => prev || maybeFlight.pnr);
-            if (maybeFlight.airline) setCompany((prev) => prev || maybeFlight.airline);
+            if (maybeFlight.airline || maybeFlight.flightNumber) {
+              setCompany((prev) => {
+                if (prev) return prev;
+                const parts = [];
+                if (maybeFlight.airline) parts.push(maybeFlight.airline);
+                if (maybeFlight.flightNumber && !parts.some(p => p.includes(maybeFlight.flightNumber))) {
+                  parts.push(maybeFlight.flightNumber);
+                }
+                return parts.join(' ');
+              });
+            }
             if (maybeFlight.departureDate) setDepartureDate(maybeFlight.departureDate);
             if (maybeFlight.returnDate) setReturnDate(maybeFlight.returnDate);
             updateDocState({
@@ -821,11 +839,11 @@ export default function NewCasePage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Numéro de réservation PNR
+                      Numéro de réservation PNR (Code dossier 6 caractères)
                     </label>
                     <input
                       type="text"
-                      placeholder="Ex: SV142"
+                      placeholder="Ex: O93HVZ"
                       value={pnr}
                       onChange={(e) => setPnr(e.target.value)}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900"
@@ -865,11 +883,11 @@ export default function NewCasePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Code PNR Aller
+                        Code PNR Aller (6 caractères)
                       </label>
                       <input
                         type="text"
-                        placeholder="Ex: SV142"
+                        placeholder="Ex: O93HVZ"
                         value={pnr}
                         onChange={(e) => setPnr(e.target.value)}
                         className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900 bg-white"

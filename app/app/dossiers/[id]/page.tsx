@@ -285,20 +285,25 @@ export default function CaseDetailPage() {
       const updates: Partial<Omit<VisaCase, 'id' | 'reference' | 'created_at'>> = {};
       if (detectedType === 'BILLET_AVION') {
         const flightData = parseFlightTicketText(rawText);
+        const flightComp = flightData.airline && flightData.flightNumber && !flightData.airline.includes(flightData.flightNumber)
+          ? `${flightData.airline} ${flightData.flightNumber}`
+          : flightData.airline || flightData.flightNumber || '';
+
         if (!caseData.flight_pnr && flightData.pnr) {
           updates.flight_pnr = flightData.pnr;
         } else if (caseData.flight_pnr && flightData.pnr && flightData.pnr !== caseData.flight_pnr) {
           // Billet retour séparé !
           updates.has_separate_tickets = true;
           updates.return_flight_pnr = flightData.pnr;
-          if (flightData.airline) updates.return_flight_company = flightData.airline;
+          if (flightComp) updates.return_flight_company = flightComp;
         }
-        if (!caseData.flight_company && flightData.airline) updates.flight_company = flightData.airline;
+        if (!caseData.flight_company && flightComp) updates.flight_company = flightComp;
         if (!caseData.departure_date && flightData.departureDate) updates.departure_date = flightData.departureDate;
         if (!caseData.return_date && flightData.returnDate) updates.return_date = flightData.returnDate;
       } else if (detectedType === 'PASSEPORT') {
         const passData = parsePassportText(rawText);
         if (!caseData.traveler_passport_num && passData.passportNumber) updates.traveler_passport_num = passData.passportNumber;
+        if (!caseData.traveler_nationality && passData.nationality) updates.traveler_nationality = passData.nationality;
         if (!caseData.traveler_birth_date && passData.birthDate) updates.traveler_birth_date = passData.birthDate;
         if (!caseData.traveler_passport_expiry && passData.expiryDate) updates.traveler_passport_expiry = passData.expiryDate;
       }
@@ -490,27 +495,12 @@ export default function CaseDetailPage() {
       return;
     }
 
-    // Fichier placeholder ou document simulé
-    const blob = new Blob(
-      [`Document certifié Visa Gestion\nNom: ${doc.file_name}\nType: ${doc.type}\nDossier: ${caseData?.reference}\nOrganisme: ${caseData?.organization_name}\nDate: ${new Date().toISOString()}`],
-      { type: 'text/plain;charset=utf-8' }
-    );
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = doc.file_name.endsWith('.pdf') || doc.file_name.endsWith('.png') || doc.file_name.endsWith('.jpg') || doc.file_name.endsWith('.jpeg')
-      ? doc.file_name
-      : `${doc.file_name}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(blobUrl);
-
+    // Si le fichier binaire n'est pas trouvé en local ou sur le serveur, avertir clairement l'utilisateur sans corrompre le fichier
     setDocFeedbackMsg({
-      text: `Téléchargement lancé : "${doc.file_name}"`,
-      type: 'success',
+      text: `Document indisponible pour le téléchargement direct ("${doc.file_name}"). Veuillez ré-attacher le fichier d'origine.`,
+      type: 'error',
     });
-    setTimeout(() => setDocFeedbackMsg(null), 3000);
+    setTimeout(() => setDocFeedbackMsg(null), 5000);
   };
 
   const handleDownloadAllDocs = () => {
@@ -993,10 +983,10 @@ export default function CaseDetailPage() {
             {!editForm.has_separate_tickets ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Numéro de réservation PNR</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Numéro de réservation PNR (6 car.)</label>
                   <input
                     type="text"
-                    placeholder="Ex: SV142"
+                    placeholder="Ex: O93HVZ"
                     value={editForm.flight_pnr}
                     onChange={(e) => setEditForm({ ...editForm, flight_pnr: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900"
@@ -1018,10 +1008,10 @@ export default function CaseDetailPage() {
                 <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 space-y-3">
                   <span className="text-[11px] font-bold text-blue-900 block uppercase">Vol Aller (Billet 1)</span>
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">PNR Aller</label>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">PNR Aller (6 car.)</label>
                     <input
                       type="text"
-                      placeholder="Ex: SV142"
+                      placeholder="Ex: O93HVZ"
                       value={editForm.flight_pnr}
                       onChange={(e) => setEditForm({ ...editForm, flight_pnr: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono uppercase text-slate-900 bg-white"
@@ -1524,18 +1514,18 @@ export default function CaseDetailPage() {
                   <p className="text-xs font-semibold text-slate-600">Chargement du document haute définition...</p>
                 </div>
               ) : previewDocModal.url && previewDocModal.url !== '#' && !previewDocModal.url.startsWith('idb://') ? (
-                previewDocModal.url.startsWith('data:application/pdf') || previewDocModal.docName.toLowerCase().endsWith('.pdf') ? (
-                  <iframe
-                    src={previewDocModal.url}
-                    title={previewDocModal.docName}
-                    className="w-full h-[70vh] rounded-xl border border-slate-300 bg-white shadow-sm"
-                  />
-                ) : (
+                previewDocModal.url.startsWith('data:image/') ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={previewDocModal.url}
                     alt={previewDocModal.docName}
                     className="max-w-full max-h-[72vh] object-contain rounded-xl border border-slate-300 shadow-md bg-white"
+                  />
+                ) : (
+                  <iframe
+                    src={previewDocModal.url}
+                    title={previewDocModal.docName}
+                    className="w-full h-[70vh] rounded-xl border border-slate-300 bg-white shadow-sm"
                   />
                 )
               ) : (

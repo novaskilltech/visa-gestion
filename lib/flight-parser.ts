@@ -90,6 +90,16 @@ const KNOWN_AIRLINES: { name: string; matchers: RegExp[]; code?: string }[] = [
     code: 'TU' 
   },
   { 
+    name: 'flyadeal', 
+    matchers: [/\bFLYADEAL\b/i, /\bADEAL\b/i, /\bF3\s*[0-9]{3,4}\b/i], 
+    code: 'F3' 
+  },
+  { 
+    name: 'Wizz Air', 
+    matchers: [/\bWIZZAIR\b/i, /\bWIZZ\s*AIR\b/i, /\bW6\s*[0-9]{3,4}\b/i, /\bW9\s*[0-9]{3,4}\b/i, /\b5W\s*[0-9]{3,4}\b/i], 
+    code: 'W6' 
+  },
+  { 
     name: 'Lufthansa', 
     matchers: [/\bLUFTHANSA\b/i, /\bLH\s*[0-9]{3,4}\b/i], 
     code: 'LH' 
@@ -131,22 +141,23 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
   // 1. DÉTECTION DU CODE PNR (RÉSERVATION / CONFIRMATION / DOSSIER PASSAGER)
   let detectedPnr = '';
 
-  // Patterns explicites avec tous les libellés de compagnies aériennes
+  // Patterns explicites avec tous les libellés usuels des compagnies aériennes
+  // Supporte les délimiteurs : , -, #, espaces et sauts de ligne
   const pnrPatterns = [
-    // "Code de confirmation", "Confirmation code", "Code confirmation"
-    /(?:CODE\s*(?:DE\s*)?CONFIRMATION|CONFIRMATION\s*(?:CODE|NO|NUMBER|NUM[ÉE]RO)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
-    // "Code de réservation", "Booking reference", "Booking code", "Réf réservation"
-    /(?:CODE\s*(?:DE\s*)?R[ÉE]SERVATION|BOOKING\s*(?:REF(?:ERENCE)?|CODE)|R[ÉE]SERVATION)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Code de confirmation", "Confirmation code", "Code confirmation", "Booking confirmation"
+    /(?:CODE\s*(?:DE\s*)?CONFIRMATION|CONFIRMATION\s*(?:CODE|NO|NUMBER|NUM[ÉE]RO)?|BOOKING\s*CONFIRMATION)\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
+    // "Code de réservation", "Booking reference", "Booking code", "Réf réservation", "Reservation number"
+    /(?:CODE\s*(?:DE\s*)?R[ÉE]SERVATION|BOOKING\s*(?:REF(?:ERENCE)?|CODE)|R[ÉE]SERVATION\s*(?:NO|NUMBER|N°)?|RESERVATION\s*(?:CODE|NUMBER|NO)?)\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
     // "Numéro du dossier", "Dossier passager", "Numéro de dossier voyageur", "Record Locator", "RLOC"
-    /(?:NUM[ÉE]RO\s*(?:DU\s*)?DOSSIER(?:\s*(?:DU\s*)?PASSAGER)?|DOSSIER\s*(?:PASSAGER|VOYAGEUR)?|RECORD\s*LOCATOR|RLOC)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:NUM[ÉE]RO\s*(?:DU\s*)?DOSSIER(?:\s*(?:DU\s*)?PASSAGER)?|DOSSIER\s*(?:PASSAGER|VOYAGEUR)?|RECORD\s*LOCATOR|RLOC)\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
     // "PNR", "Code PNR", "PNR No"
-    /(?:CODE\s*)?PNR(?:\s*(?:NUMBER|NO|N°))?\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:CODE\s*)?PNR(?:\s*(?:NUMBER|NO|N°|CODE))?\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
     // "Référence dossier", "Référence billet", "Référence vol", "Référence de réservation"
-    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DE\s*R[ÉE]SERVATION|DU\s*DOSSIER|DU\s*VOL|DU\s*BILLET|DU\s*VOYAGE)?|REF\b)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DE\s*R[ÉE]SERVATION|DU\s*DOSSIER|DU\s*VOL|DU\s*BILLET|DU\s*VOYAGE)?|REF\b)\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
     // "Itinéraire", "Electronic Itinerary", "Itinéraire électronique"
-    /(?:ITIN[ÉE]RAIRE\s*(?:[ÉE]LECTRONIQUE)?|ITINERARY)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:ITIN[ÉE]RAIRE\s*(?:[ÉE]LECTRONIQUE)?|ITINERARY)\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
     // "E-ticket receipt / confirmation"
-    /(?:E-?TICKET\s*(?:RECEIPT|CONFIRMATION)?\s*(?:NUMBER|NO)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    /(?:E-?TICKET\s*(?:RECEIPT|CONFIRMATION)?\s*(?:NUMBER|NO)?)\s*[:.\-\s#\n\r]*([A-Z0-9]{5,8})\b/i,
     // Format GDS standard
     /\b([A-Z0-9]{6})\b\s*(?:GDS|AMADEUS|SABRE|GALILEO)/i,
     /(?:ELECTRONIC\s*TICKET|ETKT)\b.*?([A-Z0-9]{6})/i,
@@ -167,27 +178,27 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
   }
 
   // 1b. Si pas de mot-clé trouvé, détection intelligente de code de réservation standard à 6 caractères
-  // (Le standard mondial aéronautique IATA/GDS : 6 caractères alphanumériques avec lettres majuscules)
+  // (Le standard mondial aéronautique IATA/GDS : 6 caractères alphanumériques reconnaissables dans un billet)
   if (!detectedPnr) {
-    // Chercher les tokens de 6 caractères exactement (ex: 6X7Y9Z, ABC12D, QWERTY, 3XYZ45)
+    // Chercher les tokens de 6 caractères exactement (ex: O93HVZ, WHDPMR, IGZ27A, 6X7Y9Z)
     const sixCharTokens = text.match(/\b([A-Z0-9]{6})\b/g) || [];
     const ignoredDictionary = new Set([
       'BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 
       'ARRIVE', 'ONLINE', 'MOBILE', 'AGENCY', 'AVION', 'TRAVEL', 'SYSTEM', 'NUMBER',
       'AIRLINE', 'AIRWAY', 'PARIS', 'JEDDAH', 'MADINA', 'RIYADH', 'AIRBUS', 'BOEING',
       'SECOND', 'MINUTE', 'GUEST', 'CLASS', 'ADULT', 'CHLD', 'INFANT', 'STATUS',
-      'ISSUED', 'NOTICE', 'REFUND', 'CHANGE', 'BEFORE', 'OCTOBR', 'DECEMB', 'PASSEP'
+      'ISSUED', 'NOTICE', 'REFUND', 'CHANGE', 'BEFORE', 'OCTOBR', 'DECEMB', 'PASSEP',
+      'FEMALE', 'GENDER', 'CLIENT', 'PERSON', 'DETAIL', 'MIDDLE', 'CREDIT', 'CHARGE'
     ]);
 
     for (const token of sixCharTokens) {
       const code = token.toUpperCase();
-      // Un PNR standard IATA comporte 6 caractères, contient des lettres majuscules et n'est pas une heure/date (pas 100% chiffres)
+      // Un PNR standard IATA comporte 6 caractères, contient des lettres majuscules et n'est pas 100% chiffres
       const hasLetters = /[A-Z]/.test(code);
       const isPureDigits = /^[0-9]{6}$/.test(code);
       if (hasLetters && !isPureDigits && !ignoredDictionary.has(code)) {
-        // Favoriser les codes avec au moins un chiffre ou structure PNR typique
         detectedPnr = code;
-        summary.push(`Code PNR (format réservation) : ${detectedPnr}`);
+        summary.push(`Code PNR (format 6 caractères standard) : ${detectedPnr}`);
         break;
       }
     }
@@ -212,17 +223,24 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     if (detectedAirline) break;
   }
 
-  // Détection explicite du numéro de vol (ex: Flight: SV 142 ou Vol XY521 ou SV142)
+  // Détection explicite du numéro de vol (ex: Flight: SV 142, Vol F3812, XY 521, TO 3140, W6 2451)
   if (!detectedFlightNum) {
-    const explicitFlightMatch = text.match(/(?:FLIGHT|VOL|VOL\s*N°|FLIGHT\s*NO)\s*[:.\-\s]*([A-Z0-9]{2}\s*[0-9]{2,4})\b/i);
+    const explicitFlightMatch = text.match(/(?:FLIGHT|VOL|VOL\s*N°|FLIGHT\s*NO)\s*[:.\-\s#\n\r]*([A-Z0-9]{2}\s*[0-9]{2,4})\b/i);
     if (explicitFlightMatch && explicitFlightMatch[1]) {
       detectedFlightNum = explicitFlightMatch[1].toUpperCase().replace(/\s+/g, '');
       summary.push(`Numéro de vol : ${detectedFlightNum}`);
     } else {
-      const flightCodeMatch = text.match(/\b([A-Z]{2}\s*[0-9]{3,4})\b/);
+      // Reconnaissance des codes IATA de vols fréquents (SV, XY, F3, AT, AF, MS, TO, TK, PC, W6, AH, TU, LH...)
+      const flightCodeMatch = text.match(/\b((?:SV|XY|F3|AT|AF|MS|TO|TK|PC|W6|AH|TU|LH|EK|QR|EY|GF)\s*[0-9]{2,4})\b/i);
       if (flightCodeMatch && flightCodeMatch[1]) {
         detectedFlightNum = flightCodeMatch[1].toUpperCase().replace(/\s+/g, '');
         summary.push(`Numéro de vol identifié : ${detectedFlightNum}`);
+      } else {
+        const generalFlightMatch = text.match(/\b([A-Z]{2}\s*[0-9]{3,4})\b/);
+        if (generalFlightMatch && generalFlightMatch[1]) {
+          detectedFlightNum = generalFlightMatch[1].toUpperCase().replace(/\s+/g, '');
+          summary.push(`Numéro de vol identifié : ${detectedFlightNum}`);
+        }
       }
     }
   }
@@ -295,6 +313,26 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
         date: `${y}-${monthNum}-${String(d).padStart(2, '0')}`,
         raw: alphaMatch[0],
         index: alphaMatch.index,
+      });
+    }
+  }
+
+  // Format 2b : Format IATA court (ex: 18OCT ou 30OCT sans année explicite, ou suivi d'une heure)
+  const iataShortDateRegex = /\b(\d{1,2})([A-Z]{3})\b/g;
+  let iataMatch: RegExpExecArray | null;
+  const currentOrNextYear = new Date().getFullYear();
+  while ((iataMatch = iataShortDateRegex.exec(text)) !== null) {
+    const d = parseInt(iataMatch[1] || '0', 10);
+    const monthStr = (iataMatch[2] || '').toUpperCase();
+    const monthNum = MONTH_NAMES[monthStr];
+    if (monthNum && d >= 1 && d <= 31) {
+      // Déterminer l'année : chercher si 2025, 2026 ou 2027 est présent dans le texte global
+      const textYearMatch = text.match(/\b(202[4-9])\b/);
+      const chosenYear = textYearMatch ? parseInt(textYearMatch[1], 10) : currentOrNextYear;
+      foundDates.push({
+        date: `${chosenYear}-${monthNum}-${String(d).padStart(2, '0')}`,
+        raw: iataMatch[0],
+        index: iataMatch.index,
       });
     }
   }
