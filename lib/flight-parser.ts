@@ -141,8 +141,10 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     /(?:NUM[ÉE]RO\s*(?:DU\s*)?DOSSIER(?:\s*(?:DU\s*)?PASSAGER)?|DOSSIER\s*(?:PASSAGER|VOYAGEUR)?|RECORD\s*LOCATOR|RLOC)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
     // "PNR", "Code PNR", "PNR No"
     /(?:CODE\s*)?PNR(?:\s*(?:NUMBER|NO|N°))?\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
-    // "Référence dossier", "Référence billet", "Référence vol"
-    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DU\s*)?(?:DOSSIER|VOL|BILLET|VOYAGE)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Référence dossier", "Référence billet", "Référence vol", "Référence de réservation"
+    /(?:R[ÉE]F[ÉE]RENCE\s*(?:DE\s*R[ÉE]SERVATION|DU\s*DOSSIER|DU\s*VOL|DU\s*BILLET|DU\s*VOYAGE)?|REF\b)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
+    // "Itinéraire", "Electronic Itinerary", "Itinéraire électronique"
+    /(?:ITIN[ÉE]RAIRE\s*(?:[ÉE]LECTRONIQUE)?|ITINERARY)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
     // "E-ticket receipt / confirmation"
     /(?:E-?TICKET\s*(?:RECEIPT|CONFIRMATION)?\s*(?:NUMBER|NO)?)\s*[:.\-\s#]*([A-Z0-9]{5,8})\b/i,
     // Format GDS standard
@@ -156,7 +158,7 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
       const candidate = match[1].trim().toUpperCase();
       // Exclure les faux positifs évidents (mots usuels ou dates)
       const ignoredWords = ['BILLET', 'FLIGHT', 'TICKET', 'VOYAGE', 'FRANCE', 'SAUDIA', 'RETURN', 'DEPART', 'CONFIRM', 'STATUS', 'NUMBER', 'DIRECT', 'PASSEPORT'];
-      if (!ignoredWords.includes(candidate) && !/^\d{4,8}$/.test(candidate)) {
+      if (!ignoredWords.includes(candidate) && !/^\d{4,8}$/.test(candidate) && candidate.length >= 5 && candidate.length <= 8) {
         detectedPnr = candidate;
         summary.push(`Code PNR détecté : ${detectedPnr}`);
         break;
@@ -245,13 +247,14 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
   let returnDate = '';
   const foundDates: { date: string; raw: string; index: number }[] = [];
 
-  // Format 1 : 15/11/2026 ou 15-11-2026 ou 15.11.2026
-  const numericDateRegex = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})\b/g;
+  // Format 1 : 15/11/2026 ou 15/11/26 ou 15-11-2026 ou 15.11.2026
+  const numericDateRegex = /\b(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})\b/g;
   let numMatch: RegExpExecArray | null;
   while ((numMatch = numericDateRegex.exec(text)) !== null) {
     const d = parseInt(numMatch[1] || '0', 10);
     const m = parseInt(numMatch[2] || '0', 10);
-    const y = parseInt(numMatch[3] || '0', 10);
+    let y = parseInt(numMatch[3] || '0', 10);
+    if (y < 100) y += 2000;
     if (d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2024 && y <= 2035) {
       foundDates.push({
         date: `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
@@ -277,8 +280,8 @@ export function parseFlightTicketText(text: string): ParsedFlightData {
     }
   }
 
-  // Format 2 : 20 NOV 2026 ou 20-NOV-2026 ou 20 NOVEMBRE 2026
-  const alphaDateRegex = /\b(\d{1,2})[\s\-\/]+([A-Za-zÀ-ÿ]{3,10})[\s\-\/]+(\d{2,4})\b/g;
+  // Format 2 : 20 NOV 2026 ou 20-NOV-26 ou 20NOV26 ou 20 NOVEMBRE 2026
+  const alphaDateRegex = /\b(\d{1,2})[\s\-\/]*([A-Za-zÀ-ÿ]{3,10})[\s\-\/]*(\d{2,4})\b/g;
   let alphaMatch: RegExpExecArray | null;
   while ((alphaMatch = alphaDateRegex.exec(text)) !== null) {
     const d = parseInt(alphaMatch[1] || '0', 10);

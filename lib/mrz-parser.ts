@@ -206,7 +206,7 @@ export function parsePassportText(text: string): ParsedPassportData {
   let detectedPassport = '';
   let detectedBirth = '';
   let detectedExpiry = '';
-  let detectedNat = 'Française';
+  let detectedNat = '';
 
   // Recherche Numéro de Passeport réel :
   // En France : 2 chiffres + 2 lettres + 5 chiffres (ex: 24AB12345) ou 8-9 caractères alphanumériques
@@ -231,22 +231,28 @@ export function parsePassportText(text: string): ParsedPassportData {
       detectedFirstName = prenomMatch[1].trim();
     }
     // Nationalité
-    for (const item of NATIONALITY_TEXT_MAP) {
-      if (item.match.test(l)) {
-        detectedNat = item.label;
-        break;
+    if (!detectedNat) {
+      for (const item of NATIONALITY_TEXT_MAP) {
+        if (item.match.test(l)) {
+          detectedNat = item.label;
+          break;
+        }
       }
     }
   }
 
   // Si pas de nationalité trouvée par ligne, scanner le texte complet
-  if (detectedNat === 'Française') {
+  if (!detectedNat) {
     for (const item of NATIONALITY_TEXT_MAP) {
       if (item.match.test(text)) {
         detectedNat = item.label;
         break;
       }
     }
+  }
+
+  if (!detectedNat) {
+    detectedNat = 'Française';
   }
 
   // Recherche Dates (JJ/MM/AAAA ou JJ.MM.AAAA)

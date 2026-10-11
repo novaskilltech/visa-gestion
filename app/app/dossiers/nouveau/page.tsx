@@ -313,6 +313,11 @@ export default function NewCasePage() {
           }
         }
 
+        // Sauvegarder immédiatement dans IndexedDB pour garantir l'accès sans délai
+        if (previewDataUrl) {
+          await storeFileInIdb(docEntry.id, previewDataUrl, file.name);
+        }
+
       } catch (err) {
         console.error('Erreur OCR sur fichier:', file.name, err);
         updateDocState({
