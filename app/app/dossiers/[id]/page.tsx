@@ -1523,7 +1523,7 @@ export default function CaseDetailPage() {
                   <Loader2 className="w-8 h-8 animate-spin text-brand-600 mx-auto" />
                   <p className="text-xs font-semibold text-slate-600">Chargement du document haute définition...</p>
                 </div>
-              ) : previewDocModal.url && previewDocModal.url !== '#' ? (
+              ) : previewDocModal.url && previewDocModal.url !== '#' && !previewDocModal.url.startsWith('idb://') ? (
                 previewDocModal.url.startsWith('data:application/pdf') || previewDocModal.docName.toLowerCase().endsWith('.pdf') ? (
                   <iframe
                     src={previewDocModal.url}
@@ -1536,53 +1536,33 @@ export default function CaseDetailPage() {
                     src={previewDocModal.url}
                     alt={previewDocModal.docName}
                     className="max-w-full max-h-[72vh] object-contain rounded-xl border border-slate-300 shadow-md bg-white"
-                    onError={(e) => {
-                      // Si l'URL data: ou blob est corrompue, afficher un fallback élégant
-                      (e.target as HTMLElement).style.display = 'none';
-                      const fallbackEl = document.getElementById('preview-doc-fallback');
-                      if (fallbackEl) fallbackEl.style.display = 'block';
-                    }}
                   />
                 )
               ) : (
-                <div className="text-center space-y-3 py-12 max-w-sm mx-auto">
-                  <AlertCircle className="w-10 h-10 text-amber-500 mx-auto" />
-                  <h4 className="text-sm font-bold text-slate-800">Pièce jointe du dossier consulaire</h4>
-                  <p className="text-xs text-slate-500">
-                    Document : <strong className="text-slate-800 font-mono">{previewDocModal.docName}</strong> enregistré sur le dossier ({caseData.reference}).
-                  </p>
+                <div className="text-center space-y-4 py-8 max-w-md mx-auto bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">Document du dossier consulaire</h4>
+                    <p className="text-xs text-slate-500 font-mono mt-1">{previewDocModal.docName}</p>
+                    <p className="text-[11px] text-slate-400 mt-2">
+                      Ce document est certifié et archivé sur le dossier <strong className="text-slate-700">{caseData.reference}</strong>.
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       const doc = caseData.documents?.find(d => d.file_name === previewDocModal.docName);
                       if (doc) handleDownloadDoc(doc);
                     }}
-                    className="px-4 py-2 rounded-xl bg-slate-900 text-white font-semibold text-xs inline-flex items-center gap-2 hover:bg-slate-800 shadow-sm"
+                    className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-md shadow-brand-600/25 flex items-center justify-center gap-2 transition-all hover:scale-102"
                   >
-                    <Download className="w-4 h-4 text-cyan-400" />
-                    <span>Télécharger la pièce jointe</span>
+                    <Download className="w-4 h-4" />
+                    <span>Télécharger le document d&apos;origine</span>
                   </button>
                 </div>
               )}
-
-              <div id="preview-doc-fallback" style={{ display: 'none' }} className="text-center space-y-3 py-12 max-w-sm mx-auto">
-                <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
-                <h4 className="text-sm font-bold text-slate-800">Aperçu direct non disponible</h4>
-                <p className="text-xs text-slate-500">
-                  Le format spécifique de ce fichier ne peut être rendu directement dans le navigateur. Vous pouvez le télécharger directement.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const doc = caseData.documents?.find(d => d.file_name === previewDocModal.docName);
-                    if (doc) handleDownloadDoc(doc);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-brand-600 text-white font-semibold text-xs inline-flex items-center gap-2 hover:bg-brand-700 shadow-sm"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Télécharger "{previewDocModal.docName}"</span>
-                </button>
-              </div>
             </div>
           </div>
         </div>
